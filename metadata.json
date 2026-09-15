@@ -1,0 +1,6 @@
+{
+  "name": "중3 영어 수행평가 자동 채점 & 피드백 시스템",
+  "description": "중학교 3학년 영어 쓰기 수행평가 최대 30명 일괄 자동 채점(16점 루브릭), 교사용 성적 시트/NEIS 세특 생성 및 학생용 개별 피드백지(A4 1장) 인쇄 시스템",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
