@@ -7,7 +7,7 @@ import { createServer as createViteServer } from "vite";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Increase payload limit for base64 image/PDF uploads
 app.use(express.json({ limit: "50mb" }));
@@ -52,24 +52,23 @@ app.post("/api/evaluate", async (req, res) => {
 
     const ai = getGeminiClient();
 
-    const systemInstruction = `너는 대한민국 중학교 3학년 영어 교사야. 
-아래 학생의 영어 쓰기 수행평가 답안(수행평가 주제: '숨은 영웅 소개하기', 총점 16점 만점)을 제공된 엄격한 객관적 루브릭에 맞춰 채점하고, 교사용 데이터와 학생용 피드백을 생성해 줘.
+    const systemInstruction = `너는 대한민국 중학교 3학년 영어 교사야. 아래 학생의 영어 쓰기 수행평가 답안(수행평가 주제: '숨은 영웅 소개하기', 총점 16점 만점)을 제공된 엄격한 객관적 루브릭에 맞춰 채점하고, 교사용 데이터와 학생용 피드백을 생성해 줘.
 **초안 점수는 평가 항목에서 완전히 삭제/제외되었으므로 절대 채점하거나 점수에 포함하지 말 것.**
 
 [채점 기준표 (총 16점 만점, 4개 항목 각 1~4점)]
 1. 본문 1: 하는 일/특징 3문장 (1~4점):
    * 문장 수 중심의 객관적 기준에 따라, 문법 요소는 독립 항목(언어형식)에서 별도로 평가하고 내용 영역은 작성된 문장 수에 맞추어 점수를 부여:
-   - 3문장 이상 작성: 4점
-   - 2문장 작성: 3점
-   - 1문장 작성: 2점
-   - 0문장 / 미작성: 1점 (기본점수 1점)
+     - 3문장 이상 작성: 4점
+     - 2문장 작성: 3점
+     - 1문장 작성: 2점
+     - 0문장 / 미작성: 1점 (기본점수 1점)
 
 2. 본문 2: 이유/배운 점 3문장 (1~4점):
    * 문장 수 중심의 객관적 기준에 따라, 문법 요소는 독립 항목(언어형식)에서 별도로 평가하고 내용 영역은 작성된 문장 수에 맞추어 점수를 부여:
-   - 3문장 이상 작성: 4점
-   - 2문장 작성: 3점
-   - 1문장 작성: 2점
-   - 0문장 / 미작성: 1점 (기본점수 1점)
+     - 3문장 이상 작성: 4점
+     - 2문장 작성: 3점
+     - 1문장 작성: 2점
+     - 0문장 / 미작성: 1점 (기본점수 1점)
 
 3. 언어형식 (명사 수식 분사 표현 + 접속사 because, 기본 4점 및 문법 오류 감점제, 1~4점):
    * 기본 점수 산출:
@@ -127,12 +126,15 @@ app.post("/api/evaluate", async (req, res) => {
 - 언어형식(4점 만점)은 분사(2점)와 because(2점) 사용 시 기본 4점을 부여하되, 본문의 문법 오류(전치사 누락, 수일치 불일치, 동사 누락, 철자 오류 등 대소문자 제외) 개수를 세어 3~5개는 1점 감점, 6개 이상은 2점을 감점하여 최종 언어형식 점수를 산출해 줘. (오류 항목들을 languageAnalysis.errors에 상세히 나열할 것)
 - 글의 구성은 80단어 이상 4점, 60~79단어 3점, 59단어 이하 2점, 백지 1점으로 부여해 줘.
 - 학생용 피드백에는 점수나 감점 기준표를 절대 노출하지 말 것.\n`;
+
     if (studentText) {
       userPrompt += `[학생 답안 텍스트]:\n"""\n${studentText}\n"""\n`;
     }
+
     if (studentInfo) {
       userPrompt += `[제공된 학생 정보]: 학년: ${studentInfo.grade || "3"}, 반: ${studentInfo.classNum || ""}, 번호: ${studentInfo.studentNum || ""}, 이름: ${studentInfo.name || ""}\n`;
     }
+
     userPrompt += `(주의: 초안 점수는 평가 대상이 아니므로 완전히 제외함)\n`;
     userPrompt += `스캔본 이미지가 있다면 상단의 학년, 반, 번호, 이름 및 학생이 손으로 쓴 본문 텍스트를 정확하게 OCR하여 전사(transcribe)해 줘.`;
 
@@ -140,10 +142,10 @@ app.post("/api/evaluate", async (req, res) => {
 
     // Try primary and fallback models with retries
     const candidateModels = [
-      "gemini-3.5-flash-lite",
-      "gemini-3.6-flash",
-      "gemini-3.8-flash",
+      "gemini-2.5-flash",
+      "gemini-1.5-flash",
     ];
+
     let response: any = null;
     let lastErr: any = null;
 
@@ -315,6 +317,7 @@ app.post("/api/evaluate", async (req, res) => {
               },
             },
           });
+
           if (response && response.text) {
             break;
           }
@@ -352,10 +355,7 @@ app.post("/api/evaluate", async (req, res) => {
 
     // 1. Language score validation with error deduction logic
     if (parsed.languageAnalysis) {
-      const errorCount =
-        parsed.languageAnalysis.errors?.length ??
-        parsed.languageAnalysis.errorCount ??
-        0;
+      const errorCount = parsed.languageAnalysis.errors?.length ?? parsed.languageAnalysis.errorCount ?? 0;
       parsed.languageAnalysis.errorCount = errorCount;
 
       let deduction = 0;
@@ -420,14 +420,6 @@ async function setupVite() {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
-app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-// Vite middleware setup
-async function setupVite() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
@@ -440,7 +432,6 @@ async function setupVite() {
 
   // 로컬 개발 환경에서만 직접 listen 실행
   if (process.env.NODE_ENV !== "production") {
-    const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
