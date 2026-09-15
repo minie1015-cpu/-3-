@@ -200,12 +200,12 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
           }),
         });
 
-        const json = await response.json();
+    const json = await response.json();
 
-        if (!response.ok || !json.success) {
-          throw new Error(json.error || '채점 평가 오류');
-        }
-
+    if (!response.ok || !json.success) {
+      const errMsg = typeof json.error === 'object' ? (json.error.message || JSON.stringify(json.error)) : (json.error || '채점 평가 오류');
+      throw new Error(errMsg);
+    }
         const resData = json.data;
         const newRecord: EvaluationRecord = {
           id: `batch-${Date.now()}-${i}`,
