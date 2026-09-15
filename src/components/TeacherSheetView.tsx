@@ -566,30 +566,51 @@ export const TeacherSheetView: React.FC<TeacherSheetViewProps> = ({
               <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-xs space-y-2 text-slate-800">
                 <div className="text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1 border-b border-amber-200/80 pb-1.5">
                   <span>기준: 분사(2점) + because(2점) 기본 4점</span>
-                  <span>감점 기준: 0~2개(0점), 3~5개(-1점), 6개 이상(-2점)</span>
+                  <span className="font-medium text-slate-700">감점 기준(대소문자 제외): 0~2개(0점), 3~5개(-1점), 6개 이상(-2점)</span>
                 </div>
                 {selectedRecordForDetail.languageAnalysis?.errors && selectedRecordForDetail.languageAnalysis.errors.length > 0 ? (
                   <div className="space-y-1">
-                    <div className="text-[11px] font-bold text-rose-800">
-                      총 {selectedRecordForDetail.languageAnalysis.errorCount}개 오류 검출 → {selectedRecordForDetail.languageAnalysis.deduction}점 감점 적용:
+                    <div className="text-[11px] font-bold text-rose-800 flex items-center justify-between">
+                      <span>감점 대상 어법 오류 {selectedRecordForDetail.languageAnalysis.errorCount}개 → {selectedRecordForDetail.languageAnalysis.deduction}점 감점 적용:</span>
+                      <span className="text-[10px] text-sky-700 font-normal">
+                        * 대소문자 오류는 감점 제외 (피드백 안내)
+                      </span>
                     </div>
                     <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                      {selectedRecordForDetail.languageAnalysis.errors.map((err, idx) => (
-                        <div key={idx} className="bg-white p-2 rounded border border-amber-200 text-[11px] flex items-center justify-between">
-                          <div>
-                            <span className="font-bold text-rose-700 line-through mr-1.5">{err.text}</span>
-                            <span className="text-indigo-900 font-semibold">→ {err.correction}</span>
+                      {selectedRecordForDetail.languageAnalysis.errors.map((err, idx) => {
+                        const isCap =
+                          err.isDeducted === false ||
+                          (err.errorType && (err.errorType.includes('대소문자') || err.errorType.includes('capital')));
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-2 rounded border text-[11px] flex items-center justify-between ${
+                              isCap
+                                ? 'bg-sky-50/70 border-sky-200'
+                                : 'bg-white border-amber-200'
+                            }`}
+                          >
+                            <div>
+                              <span className="font-bold text-rose-700 line-through mr-1.5">{err.text}</span>
+                              <span className="text-indigo-900 font-semibold">→ {err.correction}</span>
+                            </div>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${
+                                isCap
+                                  ? 'bg-sky-100 text-sky-800 border-sky-300'
+                                  : 'bg-amber-100 text-amber-800 border-amber-200'
+                              }`}
+                            >
+                              {isCap ? '대소문자 (감점제외 안내)' : err.errorType}
+                            </span>
                           </div>
-                          <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium">
-                            {err.errorType}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
                   <div className="text-emerald-800 text-[11px]">
-                    ✓ 어법·철자 오류 2개 이하로 감점 없이 4점 만점 처리되었습니다.
+                    ✓ 어법·철자 오류 2개 이하로 감점 없이 4점 만점 처리되었습니다. (대소문자 감점제외)
                   </div>
                 )}
               </div>

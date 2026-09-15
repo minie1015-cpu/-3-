@@ -331,36 +331,54 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
                   <span>
                     <strong>[채점 기준]</strong> 명사 수식 분사(2점) + 접속사 because(2점) 기본 4점 기준
                   </span>
-                  <span className="text-slate-500">
-                    * 오류 감점(대소문자 제외): 0~2개(0점 감점) / 3~5개(1점 감점) / 6개 이상(2점 감점)
+                  <span className="text-slate-600 font-medium">
+                    * 감점 기준: <strong>대소문자는 감점 제외(피드백으로만 안내)</strong> / 감점오류 0~2개(0점), 3~5개(-1점), 6개 이상(-2점)
                   </span>
                 </div>
 
                 {/* Errors list */}
                 {student.languageAnalysis?.errors && student.languageAnalysis.errors.length > 0 ? (
                   <div className="space-y-1.5">
-                    <div className="text-[11px] font-bold text-rose-900 flex items-center space-x-1">
-                      <span>⚠️ 답안에서 확인된 주요 어법·어휘 오류 목록 (총 {student.languageAnalysis.errorCount}개 검출):</span>
+                    <div className="text-[11px] font-bold text-slate-800 flex items-center justify-between">
+                      <span className="text-rose-900">⚠️ 확인된 어법 교정 및 피드백 안내 목록:</span>
+                      <span className="text-[10px] text-slate-500 font-normal">
+                        (감점 대상 어법 오류: {student.languageAnalysis.errorCount}개 / 대소문자는 감점 대상 제외)
+                      </span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {student.languageAnalysis.errors.map((err, errIdx) => (
-                        <div
-                          key={errIdx}
-                          className="bg-white p-2 rounded-lg border border-amber-200/90 text-[11px] space-y-0.5 shadow-2xs"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-rose-700 line-through">
-                              {err.text}
-                            </span>
-                            <span className="text-[10px] font-semibold text-amber-800 bg-amber-100/70 px-1.5 py-0.2 rounded">
-                              {err.errorType}
-                            </span>
+                      {student.languageAnalysis.errors.map((err, errIdx) => {
+                        const isCap =
+                          err.isDeducted === false ||
+                          (err.errorType && (err.errorType.includes('대소문자') || err.errorType.includes('capital')));
+                        return (
+                          <div
+                            key={errIdx}
+                            className={`p-2 rounded-lg border text-[11px] space-y-0.5 shadow-2xs ${
+                              isCap
+                                ? 'bg-sky-50/70 border-sky-200'
+                                : 'bg-white border-amber-200/90'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-rose-700 line-through">
+                                {err.text}
+                              </span>
+                              <span
+                                className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border ${
+                                  isCap
+                                    ? 'bg-sky-100 text-sky-800 border-sky-300'
+                                    : 'bg-amber-100/70 text-amber-800 border-amber-200'
+                                }`}
+                              >
+                                {isCap ? '대소문자 (감점제외 안내)' : err.errorType}
+                              </span>
+                            </div>
+                            <div className="text-indigo-900 font-bold">
+                              → {err.correction}
+                            </div>
                           </div>
-                          <div className="text-indigo-900 font-bold">
-                            → {err.correction}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (

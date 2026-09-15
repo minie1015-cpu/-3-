@@ -1439,31 +1439,51 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                           {lastSingleResult.languageAnalysis && (
                             <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
                               {lastSingleResult.languageAnalysis.deduction > 0
-                                ? `오류 ${lastSingleResult.languageAnalysis.errorCount}개 (-${lastSingleResult.languageAnalysis.deduction}점 감점)`
-                                : '감점 없음'}
+                                ? `감점 오류 ${lastSingleResult.languageAnalysis.errorCount}개 (-${lastSingleResult.languageAnalysis.deduction}점 감점)`
+                                : '감점 없음 (대소문자 감점제외)'}
                             </span>
                           )}
                         </div>
                         {lastSingleResult.languageAnalysis?.errors && lastSingleResult.languageAnalysis.errors.length > 0 ? (
                           <div className="mt-1 space-y-1 pl-1">
-                            {lastSingleResult.languageAnalysis.errors.slice(0, 3).map((err, idx) => (
-                              <div key={idx} className="bg-amber-50/50 p-1.5 rounded border border-amber-200 text-[11px] flex items-center justify-between">
-                                <div>
-                                  <span className="line-through text-rose-700 mr-1">{err.text}</span>
-                                  <span className="text-indigo-900 font-bold">→ {err.correction}</span>
+                            {lastSingleResult.languageAnalysis.errors.slice(0, 3).map((err, idx) => {
+                              const isCap =
+                                err.isDeducted === false ||
+                                (err.errorType && (err.errorType.includes('대소문자') || err.errorType.includes('capital')));
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`p-1.5 rounded border text-[11px] flex items-center justify-between ${
+                                    isCap
+                                      ? 'bg-sky-50/70 border-sky-200'
+                                      : 'bg-amber-50/50 border-amber-200'
+                                  }`}
+                                >
+                                  <div>
+                                    <span className="line-through text-rose-700 mr-1">{err.text}</span>
+                                    <span className="text-indigo-900 font-bold">→ {err.correction}</span>
+                                  </div>
+                                  <span
+                                    className={`text-[10px] font-medium px-1.5 py-0.2 rounded border ${
+                                      isCap
+                                        ? 'bg-sky-100 text-sky-800 border-sky-300 font-semibold'
+                                        : 'bg-amber-100/70 text-amber-800 border-amber-200'
+                                    }`}
+                                  >
+                                    {isCap ? '대소문자 (감점제외 안내)' : err.errorType}
+                                  </span>
                                 </div>
-                                <span className="text-[10px] text-amber-800 font-medium">{err.errorType}</span>
-                              </div>
-                            ))}
+                              );
+                            })}
                             {lastSingleResult.languageAnalysis.errors.length > 3 && (
                               <div className="text-[10px] text-slate-500 italic">
-                                * 외 {lastSingleResult.languageAnalysis.errors.length - 3}개 오류 포함 (피드백지 전문에서 확인)
+                                * 외 {lastSingleResult.languageAnalysis.errors.length - 3}개 오류/교정 포함 (피드백지 전문에서 확인)
                               </div>
                             )}
                           </div>
                         ) : (
                           <p className="text-[11px] text-slate-600 pl-1 mt-0.5">
-                            ✓ 주요 문법/어휘 오류 2개 이하로 감점 없이 기본 점수를 획득하였습니다.
+                            ✓ 주요 문법/어휘 오류 2개 이하로 감점 없이 기본 점수를 획득하였습니다. (대소문자는 감점 대상 제외)
                           </p>
                         )}
                       </div>

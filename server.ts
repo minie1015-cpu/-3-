@@ -116,12 +116,16 @@ app.post("/api/evaluate", async (req, res) => {
      - 명사를 수식하는 분사 표현(~ing, p.p. 형태) 사용 (2점)
      - 접속사 because 사용 (2점)
      - 분사(2점)와 because(2점) 사용 시 기본 4점을 부여함 (하나만 사용 시 기본 2점, 둘 다 미사용 시 기본 1점)
-   * 어법/문법 오류 감점 기준 (대소문자 제외, 철자 오류, 전치사 누락/오용, 수일치 불일치, 동사 누락, 품사 오용 등):
-     - 오류 0~2개: 감점 없음 (4점 유지)
-     - 오류 3~5개: 1점 감점 (1점 차감)
-     - 오류 6개 이상: 2점 감점 (2점 차감)
+   * ★ [핵심 지침: 대소문자 감점 제외 및 피드백 안내]
+     - **대소문자 오류(문장의 첫 글자 소문자, 고유명사 소문자, 1인칭 대명사 i 소문자 등)는 감점 대상에서 완전히 제외(0점 감점)**합니다!
+     - 하지만 **학생용 피드백(Better Expressions 및 교정 목록)으로는 대소문자 바른 표기를 다정하게 반드시 안내**해야 합니다!
+     - 따라서 대소문자 오류는 languageAnalysis.errors에 기록하되, errorType: '대소문자(피드백안내)', isDeducted: false 로 설정하고, 감점 산정용 errorCount 및 deduction 계산에서는 절대로 카운트하지 마세요.
+   * 감점 대상 오류 기준 (대소문자 제외한 철자 오류, 전치사 누락/오용, 수일치 불일치, 동사 누락, 시제 오류, 품사 오용 등):
+     - 감점 대상 오류 0~2개: 감점 없음 (기본 점수 유지)
+     - 감점 대상 오류 3~5개: 1점 감점 (-1점 차감)
+     - 감점 대상 오류 6개 이상: 2점 감점 (-2점 차감)
    * 최종 언어형식 점수 = Math.max(1, 기본 점수 - 감점)
-   * 반드시 본문에서 발견된 모든 문법/어휘 오류의 목록(오류 어구, 오류 종류, 올바른 교정)을 languageAnalysis.errors에 상세히 기재하고 오류 개수(errorCount)를 셀 것!
+   * languageAnalysis.errors에는 본문에서 발견된 오류들을 기록하되, 대소문자는 isDeducted: false로 감점 대상과 명확히 구분할 것!
 
 4. 글의 구성 (단어 수 기준, 1~4점):
    - 80단어 이상: 4점
@@ -164,7 +168,10 @@ app.post("/api/evaluate", async (req, res) => {
     // Add prompt text
     let userPrompt = `다음 학생의 답안을 분석하고 16점 객관적 루브릭에 맞춰 채점해 줘.
 - 내용 영역(본문1, 본문2)은 문법 요소를 별도로 분리하고 문장 수 중심의 객관적 기준(3문장: 4점 / 2문장: 3점 / 1문장: 2점 / 0문장: 1점)에 따라 점수를 부여해 줘.
-- 언어형식(4점 만점)은 분사(2점)와 because(2점) 사용 시 기본 4점을 부여하되, 본문의 문법 오류(전치사 누락, 수일치 불일치, 동사 누락, 철자 오류 등 대소문자 제외) 개수를 세어 3~5개는 1점 감점, 6개 이상은 2점을 감점하여 최종 언어형식 점수를 산출해 줘. (오류 항목들을 languageAnalysis.errors에 상세히 나열할 것)
+- 언어형식(4점 만점):
+  * 분사(2점)와 because(2점) 사용 시 기본 4점(하나만 사용 시 2점, 둘 다 미사용 시 1점).
+  * [중요] 대소문자 표기 오류(문장 첫 글자 소문자, 고유명사 소문자 등)는 감점 대상에서 완전히 제외(0점 감점)! 다만 학생 피드백(Better Expressions 및 errors 목록)에는 교정 안내를 꼭 제공하고 isDeducted: false 로 표시할 것.
+  * 감점 대상 문법/철자 오류(대소문자 제외) 개수를 세어 0~2개 0점 감점, 3~5개 1점 감점, 6개 이상 2점 감점하여 최종 언어형식 점수를 산출해 줘.
 - 글의 구성은 80단어 이상 4점, 60~79단어 3점, 59단어 이하 2점, 백지 1점으로 부여해 줘.
 - 학생용 피드백에는 점수나 감점 기준표를 절대 노출하지 말 것.\n`;
 
@@ -244,10 +251,11 @@ app.post("/api/evaluate", async (req, res) => {
                           type: Type.OBJECT,
                           properties: {
                             text: { type: Type.STRING, description: "오류 어구" },
-                            errorType: { type: Type.STRING, description: "오류 유형 (철자, 전치사, 수일치, 동사누락 등)" },
+                            errorType: { type: Type.STRING, description: "오류 유형 (대소문자, 철자, 전치사, 수일치, 동사누락 등)" },
                             correction: { type: Type.STRING, description: "올바른 수정 제안" },
+                            isDeducted: { type: Type.BOOLEAN, description: "감점 대상 여부 (대소문자 오류는 반드시 false, 그 외 문법/철자 오류는 true)" },
                           },
-                          required: ["text", "errorType", "correction"],
+                          required: ["text", "errorType", "correction", "isDeducted"],
                         },
                       },
                     },
@@ -394,15 +402,44 @@ app.post("/api/evaluate", async (req, res) => {
       totalScore: 16,
     };
 
-    // 1. Language score validation with error deduction logic
+    // 1. Language score validation with error deduction logic (대소문자는 감점 제외, 피드백으로만 안내)
     if (parsed.languageAnalysis) {
-      const errorCount = parsed.languageAnalysis.errors?.length ?? parsed.languageAnalysis.errorCount ?? 0;
-      parsed.languageAnalysis.errorCount = errorCount;
+      const allErrors = Array.isArray(parsed.languageAnalysis.errors)
+        ? parsed.languageAnalysis.errors
+        : [];
+
+      let deductionErrorCount = 0;
+      allErrors.forEach((err: any) => {
+        const errorTypeStr = String(err.errorType || '').toLowerCase();
+        const textStr = String(err.text || '').trim();
+        const corrStr = String(err.correction || '').trim();
+
+        // 대소문자 오류 여부 판별 (명시적 isDeducted === false, 대소문자 키워드, 혹은 철자 동일하고 대소문자만 다른 경우)
+        const isCapitalization =
+          err.isDeducted === false ||
+          errorTypeStr.includes('대소문자') ||
+          errorTypeStr.includes('capital') ||
+          errorTypeStr.includes('case') ||
+          (textStr.toLowerCase() === corrStr.toLowerCase() && textStr !== corrStr);
+
+        if (isCapitalization) {
+          err.isDeducted = false;
+          if (!err.errorType.includes('대소문자')) {
+            err.errorType = '대소문자 (감점제외 안내)';
+          }
+        } else {
+          err.isDeducted = true;
+          deductionErrorCount++;
+        }
+      });
+
+      parsed.languageAnalysis.errors = allErrors;
+      parsed.languageAnalysis.errorCount = deductionErrorCount;
 
       let deduction = 0;
-      if (errorCount >= 6) {
+      if (deductionErrorCount >= 6) {
         deduction = 2;
-      } else if (errorCount >= 3) {
+      } else if (deductionErrorCount >= 3) {
         deduction = 1;
       } else {
         deduction = 0;

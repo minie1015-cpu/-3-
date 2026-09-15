@@ -40,7 +40,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 3. 언어형식 (명사 수식 분사 표현 + 접속사 because, 기본 4점 및 문법 오류 감점제, 1~4점):
    * 기본 점수 산출: 명사수식 분사(2점) + because(2점) = 기본 4점 (하나만 사용 시 2점, 둘 다 미사용 시 1점)
-   * 오류 감점: 0~2개 감점 없음, 3~5개 1점 감점, 6개 이상 2점 감점
+   * ★ [핵심 지침: 대소문자 감점 제외 및 피드백 안내]:
+     - **대소문자 오류(문장 첫 글자 소문자, 고유명사 소문자, 소문자 i 등)는 감점 대상에서 완전히 제외(0점 감점, isDeducted: false)**합니다!
+     - 하지만 **학생용 피드백(Better Expressions 및 교정 안내)으로는 대소문자 바른 표기를 다정하게 반드시 안내**해야 합니다!
+     - 감점 산정용 errorCount 및 deduction 계산에서는 대소문자 오류를 절대로 카운트하지 마세요.
+   * 감점 대상 오류(대소문자 제외한 철자, 전치사, 수일치, 동사누락 등):
+     - 감점 대상 오류 0~2개: 감점 없음 (기본 점수 유지)
+     - 감점 대상 오류 3~5개: 1점 감점 (-1점 차감)
+     - 감점 대상 오류 6개 이상: 2점 감점 (-2점 차감)
    * 최종 점수 = Math.max(1, 기본 점수 - 감점)
 
 4. 글의 구성 (단어 수 기준, 1~4점):
@@ -60,7 +67,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    let userPrompt = `다음 학생의 답안을 분석하고 16점 객관적 루브릭에 맞춰 채점해 줘.\n`;
+    let userPrompt = `다음 학생의 답안을 분석하고 16점 객관적 루브릭에 맞춰 채점해 줘.
+- 내용 영역(본문1, 본문2)은 문법 요소를 별도로 분리하고 문장 수 중심의 객관적 기준(3문장: 4점 / 2문장: 3점 / 1문장: 2점 / 0문장: 1점)에 따라 점수를 부여해 줘.
+- 언어형식(4점 만점):
+  * 분사(2점)와 because(2점) 사용 시 기본 4점(하나만 사용 시 2점, 둘 다 미사용 시 1점).
+  * [중요] 대소문자 표기 오류(문장 첫 글자 소문자, 고유명사 소문자 등)는 감점 대상에서 완전히 제외(0점 감점)! 다만 학생 피드백(Better Expressions 및 errors 목록)에는 교정 안내를 꼭 제공하고 isDeducted: false 로 표시할 것.
+  * 감점 대상 문법/철자 오류(대소문자 제외) 개수를 세어 0~2개 0점 감점, 3~5개 1점 감점, 6개 이상 2점 감점하여 최종 언어형식 점수를 산출해 줘.
+- 글의 구성은 80단어 이상 4점, 60~79단어 3점, 59단어 이하 2점, 백지 1점으로 부여해 줘.
+- 학생용 피드백에는 점수나 감점 기준표를 절대 노출하지 말 것.\n`;
     if (studentText) {
       userPrompt += `[학생 답안 텍스트]:\n"""\n${studentText}\n"""\n`;
     }
@@ -118,8 +132,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                       text: { type: Type.STRING },
                       errorType: { type: Type.STRING },
                       correction: { type: Type.STRING },
+                      isDeducted: { type: Type.BOOLEAN },
                     },
-                    required: ['text', 'errorType', 'correction'],
+                    required: ['text', 'errorType', 'correction', 'isDeducted'],
                   },
                 },
               },
@@ -231,10 +246,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const wc = parsed.wordCount ?? 80;
     scores.wordCountScore = wc >= 80 ? 4 : wc >= 60 ? 3 : wc >= 1 ? 2 : 1;
 
-    const errorCount = parsed.languageAnalysis?.errors?.length ?? 0;
-    const deduction = errorCount >= 6 ? 2 : errorCount >= 3 ? 1 : 0;
-    const baseScore = parsed.languageAnalysis?.baseScore || 4;
-    scores.languageScore = Math.max(1, Math.min(4, baseScore - deduction));
+    // 언어형식 검증: 대소문자는 감점 대상에서 완전히 제외하고 피드백으로만 제공
+    if (parsed.languageAnalysis) {
+      const allErrors = Array.isArray(parsed.languageAnalysis.errors)
+        ? parsed.languageAnalysis.errors
+        : [];
+
+      let deductionErrorCount = 0;
+      allErrors.forEach((err: any) => {
+        const errorTypeStr = String(err.errorType || '').toLowerCase();
+        const textStr = String(err.text || '').trim();
+        const corrStr = String(err.correction || '').trim();
+
+        const isCapitalization =
+          err.isDeducted === false ||
+          errorTypeStr.includes('대소문자') ||
+          errorTypeStr.includes('capital') ||
+          errorTypeStr.includes('case') ||
+          (textStr.toLowerCase() === corrStr.toLowerCase() && textStr !== corrStr);
+
+        if (isCapitalization) {
+          err.isDeducted = false;
+          if (!err.errorType.includes('대소문자')) {
+            err.errorType = '대소문자 (감점제외 안내)';
+          }
+        } else {
+          err.isDeducted = true;
+          deductionErrorCount++;
+        }
+      });
+
+      parsed.languageAnalysis.errors = allErrors;
+      parsed.languageAnalysis.errorCount = deductionErrorCount;
+
+      const deduction = deductionErrorCount >= 6 ? 2 : deductionErrorCount >= 3 ? 1 : 0;
+      parsed.languageAnalysis.deduction = deduction;
+
+      const baseScore = parsed.languageAnalysis.baseScore || 4;
+      scores.languageScore = Math.max(1, Math.min(4, baseScore - deduction));
+      parsed.languageAnalysis.finalLanguageScore = scores.languageScore;
+    } else {
+      scores.languageScore = 4;
+    }
 
     scores.totalScore =
       scores.body1Score + scores.body2Score + scores.languageScore + scores.wordCountScore;

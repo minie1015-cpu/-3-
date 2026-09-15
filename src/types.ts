@@ -38,6 +38,7 @@ export interface GrammarErrorInfo {
   text: string;
   errorType: string;
   correction: string;
+  isDeducted?: boolean;        // 감점 대상 여부 (대소문자 오류 등은 감점 제외: false)
 }
 
 export interface LanguageAnalysisInfo {

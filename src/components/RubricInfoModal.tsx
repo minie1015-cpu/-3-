@@ -116,28 +116,34 @@ export const RubricInfoModal: React.FC<RubricInfoModalProps> = ({ isOpen, onClos
               <div className="flex items-center justify-between font-bold text-slate-900 mb-2">
                 <span className="flex items-center space-x-2">
                   <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs">3</span>
-                  <span>언어형식: 명사수식 분사(~ing/p.p.) & 접속사 because</span>
+                  <span>언어형식: 명사수식 분사(~ing/p.p.) & 접속사 because (기본 4점 및 어법 감점제)</span>
                 </span>
                 <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-xs border border-indigo-200">
-                  배점: 4점 (기본점수 1점)
+                  배점: 1~4점
                 </span>
               </div>
-              <div className="grid grid-cols-4 gap-2 text-xs">
+              <div className="grid grid-cols-4 gap-2 text-xs mb-2">
                 <div className="bg-white p-2 rounded border border-slate-200">
-                  <div className="font-bold text-indigo-700">4점 (우수)</div>
-                  <div className="text-slate-500 mt-1">명사수식 분사표현과 because 둘 다 바르게 사용</div>
+                  <div className="font-bold text-indigo-700">4점 (만점)</div>
+                  <div className="text-slate-500 mt-1">분사/because 활용 & 감점 대상 오류 0~2개</div>
                 </div>
                 <div className="bg-white p-2 rounded border border-slate-200">
-                  <div className="font-bold text-slate-700">3점 (보통)</div>
-                  <div className="text-slate-500 mt-1">분사 또는 because 중 하나만 바르게 사용</div>
+                  <div className="font-bold text-slate-700">3점 (1점 감점)</div>
+                  <div className="text-slate-500 mt-1">기본 충족 후 어법 오류 3~5개 검출</div>
                 </div>
                 <div className="bg-white p-2 rounded border border-slate-200">
-                  <div className="font-bold text-slate-700">2점 (오류)</div>
-                  <div className="text-slate-500 mt-1">쓰긴 썼으나 잘못 씀 (명사수식 아니거나 어법 오류)</div>
+                  <div className="font-bold text-slate-700">2점 (2점 감점)</div>
+                  <div className="text-slate-500 mt-1">어법 오류 6개 이상 또는 핵심요소 1개만 사용</div>
                 </div>
                 <div className="bg-white p-2 rounded border border-slate-200">
                   <div className="font-bold text-rose-600">1점 (기본)</div>
-                  <div className="text-slate-500 mt-1">둘 다 쓰지 않았거나 백지 제출</div>
+                  <div className="text-slate-500 mt-1">핵심요소 미사용 또는 백지 제출</div>
+                </div>
+              </div>
+              <div className="bg-sky-50 border border-sky-200 rounded-lg p-2.5 text-[11px] text-sky-900 flex items-start space-x-1.5">
+                <span className="font-bold text-sky-700">💡 대소문자 규정:</span>
+                <div>
+                  <strong>대소문자 오류는 점수 감점 대상에서 완전히 제외</strong>됩니다. 다만 학생이 올바른 문법 습관을 기를 수 있도록 <strong>학생 피드백지(교정 안내)로는 친절하게 안내</strong>됩니다.
                 </div>
               </div>
             </div>
