@@ -97,4 +97,8 @@ export interface BatchFileItem {
   status: 'idle' | 'processing' | 'success' | 'error';
   errorMessage?: string;
   result?: EvaluationRecord;
+  isPdfPage?: boolean;
+  pageIndex?: number;
+  totalPdfPages?: number;
+  originalPdfName?: string;
 }

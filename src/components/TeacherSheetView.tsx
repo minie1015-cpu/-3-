@@ -195,7 +195,7 @@ export const TeacherSheetView: React.FC<TeacherSheetViewProps> = ({
             교사용 수행평가 성적 관리 시트
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            20점 만점 세부 루브릭 점수 산출 결과, 교사용 단문 메모 및 나이스(NEIS) 세특용 서술문 일람표입니다.
+            16점 만점 세부 루브릭 점수 산출 결과, 교사용 단문 메모 및 나이스(NEIS) 세특용 서술문 일람표입니다.
           </p>
         </div>
 
@@ -550,6 +550,48 @@ export const TeacherSheetView: React.FC<TeacherSheetViewProps> = ({
               </span>
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 leading-relaxed max-h-40 overflow-y-auto whitespace-pre-wrap">
                 {selectedRecordForDetail.extractedText}
+              </div>
+            </div>
+
+            {/* Language Analysis and Error Deduction Card */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-slate-900">
+                  언어형식 평가 및 오류 감점 내역:
+                </span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  언어 점수: {selectedRecordForDetail.scores.languageScore}/4점
+                </span>
+              </div>
+              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-xs space-y-2 text-slate-800">
+                <div className="text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1 border-b border-amber-200/80 pb-1.5">
+                  <span>기준: 분사(2점) + because(2점) 기본 4점</span>
+                  <span>감점 기준: 0~2개(0점), 3~5개(-1점), 6개 이상(-2점)</span>
+                </div>
+                {selectedRecordForDetail.languageAnalysis?.errors && selectedRecordForDetail.languageAnalysis.errors.length > 0 ? (
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-bold text-rose-800">
+                      총 {selectedRecordForDetail.languageAnalysis.errorCount}개 오류 검출 → {selectedRecordForDetail.languageAnalysis.deduction}점 감점 적용:
+                    </div>
+                    <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                      {selectedRecordForDetail.languageAnalysis.errors.map((err, idx) => (
+                        <div key={idx} className="bg-white p-2 rounded border border-amber-200 text-[11px] flex items-center justify-between">
+                          <div>
+                            <span className="font-bold text-rose-700 line-through mr-1.5">{err.text}</span>
+                            <span className="text-indigo-900 font-semibold">→ {err.correction}</span>
+                          </div>
+                          <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium">
+                            {err.errorType}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-emerald-800 text-[11px]">
+                    ✓ 어법·철자 오류 2개 이하로 감점 없이 4점 만점 처리되었습니다.
+                  </div>
+                )}
               </div>
             </div>
 

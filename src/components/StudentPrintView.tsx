@@ -25,6 +25,8 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
 }) => {
   // 'single' = print only selected student, 'all' = batch print all students
   const [printScope, setPrintScope] = useState<'single' | 'all'>('single');
+  // Student privacy: hide name on feedback sheet, show only grade/class/studentNum
+  const [hideNameOnSheet, setHideNameOnSheet] = useState(true);
   // Edit mode for personalizing feedback before print
   const [isEditing, setIsEditing] = useState(false);
 
@@ -99,6 +101,19 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
             A4 1장 전면 출력 규격 (1학생 1페이지 완결)
           </span>
 
+          {/* Student Name Privacy Toggle (Teacher requested: student feedback shows only grade/class/studentNum) */}
+          <button
+            onClick={() => setHideNameOnSheet(!hideNameOnSheet)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center space-x-1.5 ${
+              hideNameOnSheet
+                ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+            }`}
+            title="학생 피드백지에 이름을 숨기고 반/번호만 표시할지 여부"
+          >
+            <span>{hideNameOnSheet ? '🔒 피드백지 이름 비공개(반·번호만)' : '🔓 이름 표시 중'}</span>
+          </button>
+
           {/* Print Scope */}
           <div className="bg-slate-100 p-1 rounded-xl flex items-center text-xs">
             <button
@@ -146,23 +161,23 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
             <Printer className="w-4 h-4" />
             <span>
               {printScope === 'all'
-                ? `전체 학급 일괄 인쇄 (${records.length}명)`
-                : `${currentRecord.studentInfo.name} 피드백지 인쇄`}
+                ? `전체 학급 일괄 인쇄 (${records.length}명 · 반번호 표기)`
+                : `${currentRecord.studentInfo.grade}-${currentRecord.studentInfo.classNum}-${currentRecord.studentInfo.studentNum} 피드백지 인쇄 (${currentRecord.studentInfo.name})`}
             </span>
           </button>
         </div>
       </div>
 
-      {/* Security Banner: Confirms student privacy */}
-      <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center justify-between print:hidden">
+      {/* Security & Privacy Banner */}
+      <div className="p-3.5 bg-slate-100 border border-slate-300 rounded-xl text-slate-800 text-xs flex items-center justify-between print:hidden">
         <div className="flex items-center space-x-2">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>
-            <strong>보안 필터 작동 중:</strong> 채점 기준표(감점 요인, 1~4점 수치)가 학생용 출력지에는 전혀 노출되지 않으며, 친절한 별점 성취도와 구체적인 교정 문장으로만 구성되어 <strong>A4 1장 이내</strong>로 깔끔하게 인쇄됩니다.
+            <strong>학생 개인정보 보호 및 언어형식 피드백:</strong> 교사는 상단에서 학생 이름을 확인하여 관리할 수 있으며, 학생용 개별 피드백지에는 이름이 나오지 않고 <strong>반·번호({currentRecord.studentInfo.grade}학년 {currentRecord.studentInfo.classNum}반 {currentRecord.studentInfo.studentNum}번)만 표기</strong>됩니다. 또한 언어형식에서 <strong>어떤 부분이 틀려서 몇 점 감점</strong>되었는지 상세히 안내됩니다.
           </span>
         </div>
-        <span className="text-[11px] font-mono text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-          루브릭 수치 비노출 보장
+        <span className="text-[11px] font-mono text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded">
+          {hideNameOnSheet ? '이름 비공개 (반·번호 표기)' : '이름 노출 모드'}
         </span>
       </div>
 
@@ -221,23 +236,29 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
             className="a4-feedback-sheet bg-white border-2 border-slate-800 rounded-2xl shadow-xs print:shadow-none print:border-2 print:border-black p-6 sm:p-7 transition-all max-w-3xl mx-auto print:max-w-none print:w-full print:rounded-none print:p-6 print:break-after-page"
           >
             {/* 1. Header Box */}
-            <div className="border-b-2 border-slate-800 pb-3 mb-4">
+            <div className="border-b-2 border-slate-800 pb-3 mb-3.5">
               <div className="flex items-center justify-between">
                 <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900">
                   [2026학년도 2학기 영어 쓰기 수행평가 개별 피드백지]
                 </h2>
-                <span className="text-xs font-bold px-2 py-0.5 border border-slate-800 rounded">
+                <span className="text-xs font-bold px-2 py-0.5 border border-slate-800 rounded bg-slate-50">
                   성장 중심 평가
                 </span>
               </div>
               <div className="mt-2.5 flex items-center justify-between text-xs sm:text-sm font-bold text-slate-800">
-                <div className="space-x-3">
-                  <span>{student.studentInfo.grade}학년</span>
-                  <span>{student.studentInfo.classNum}반</span>
-                  <span>{student.studentInfo.studentNum}번</span>
-                  <span className="text-indigo-900 text-sm font-black border-b-2 border-indigo-900 pb-0.5">
-                    이름: {student.studentInfo.name}
+                <div className="flex items-center space-x-2">
+                  <span className="px-2.5 py-0.5 bg-slate-900 text-white rounded font-black text-xs sm:text-sm tracking-wide">
+                    {student.studentInfo.grade}학년 {student.studentInfo.classNum}반 {student.studentInfo.studentNum}번
                   </span>
+                  {!hideNameOnSheet ? (
+                    <span className="text-indigo-900 text-xs sm:text-sm font-black border-b-2 border-indigo-900 pb-0.5 ml-1">
+                      이름: {student.studentInfo.name}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-slate-500 font-normal">
+                      (개별 피드백지)
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-slate-600 font-medium">
                   과제: 숨은 영웅 소개하기 (My Hidden Hero)
@@ -246,26 +267,26 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
             </div>
 
             {/* 2. 영역별 성취 수준 (별점 / qualitative stars) */}
-            <div className="mb-4">
+            <div className="mb-3.5">
               <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center space-x-1.5">
                 <span className="text-slate-800">■</span>
                 <span>영역별 성취 수준</span>
               </div>
-              <div className="bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm space-y-2 text-slate-800">
+              <div className="bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm space-y-1.5 text-slate-800">
                 <div className="flex items-center justify-between">
-                  <span>• 내용 구성 (영웅 특징 및 선정 이유):</span>
+                  <span>• 내용 구성 (영웅 특징 3문장 및 선정 이유 3문장):</span>
                   <span className="font-mono text-amber-500 font-bold tracking-wider text-sm">
                     {student.studentFeedback.achievementLevels.contentStars}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>• 언어 형식 (분사 표현, 접속사 because):</span>
+                  <span>• 언어 형식 (분사 표현, 접속사 because, 어법 정확도):</span>
                   <span className="font-mono text-amber-500 font-bold tracking-wider text-sm">
                     {student.studentFeedback.achievementLevels.languageStars}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>• 분량 및 어휘:</span>
+                  <span>• 글의 분량 및 어휘 구성:</span>
                   <div className="space-x-2">
                     <span className="font-mono text-amber-500 font-bold tracking-wider text-sm">
                       {student.studentFeedback.achievementLevels.volumeStars}
@@ -278,28 +299,100 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
               </div>
             </div>
 
-            {/* 3. 잘한 점 (Good Points) */}
-            <div className="mb-4">
+            {/* 3. 언어형식 오류 분석 및 감점 안내 (선생님 지정 루브릭 반영) */}
+            <div className="mb-3.5">
+              <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center justify-between">
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-slate-800">■</span>
+                  <span>언어형식 평가 및 감점 세부 안내</span>
+                </div>
+                <div className="text-[11px] font-bold text-slate-600">
+                  {student.languageAnalysis ? (
+                    student.languageAnalysis.deduction > 0 ? (
+                      <span className="text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded font-bold">
+                        기본 4점 중 어법 오류 {student.languageAnalysis.errorCount}개 검출 → {student.languageAnalysis.deduction}점 감점 (최종 {student.languageAnalysis.finalLanguageScore}점)
+                      </span>
+                    ) : (
+                      <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-bold">
+                        어법 오류 2개 이하 (감점 없음 · 4점 만점)
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-bold">
+                      언어형식: {student.scores.languageScore}/4점
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-amber-50/40 border border-amber-200 rounded-xl p-3 text-xs space-y-2 text-slate-800">
+                {/* Rule summary */}
+                <div className="text-[11px] text-slate-600 border-b border-amber-200/70 pb-1.5 flex flex-wrap items-center justify-between gap-1">
+                  <span>
+                    <strong>[채점 기준]</strong> 명사 수식 분사(2점) + 접속사 because(2점) 기본 4점 기준
+                  </span>
+                  <span className="text-slate-500">
+                    * 오류 감점(대소문자 제외): 0~2개(0점 감점) / 3~5개(1점 감점) / 6개 이상(2점 감점)
+                  </span>
+                </div>
+
+                {/* Errors list */}
+                {student.languageAnalysis?.errors && student.languageAnalysis.errors.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-rose-900 flex items-center space-x-1">
+                      <span>⚠️ 답안에서 확인된 주요 어법·어휘 오류 목록 (총 {student.languageAnalysis.errorCount}개 검출):</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {student.languageAnalysis.errors.map((err, errIdx) => (
+                        <div
+                          key={errIdx}
+                          className="bg-white p-2 rounded-lg border border-amber-200/90 text-[11px] space-y-0.5 shadow-2xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-rose-700 line-through">
+                              {err.text}
+                            </span>
+                            <span className="text-[10px] font-semibold text-amber-800 bg-amber-100/70 px-1.5 py-0.2 rounded">
+                              {err.errorType}
+                            </span>
+                          </div>
+                          <div className="text-indigo-900 font-bold">
+                            → {err.correction}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-emerald-800 font-medium text-[11px] py-0.5">
+                    ✓ 명사 수식 분사 표현과 접속사 because를 어법에 맞게 잘 활용하였으며, 감점 대상 오류가 2개 이하로 우수합니다.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 4. 잘한 점 (Good Points) */}
+            <div className="mb-3.5">
               <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center space-x-1.5">
                 <span className="text-slate-800">■</span>
                 <span>잘한 점 (Good Points)</span>
               </div>
-              <div className="bg-emerald-50/40 border border-emerald-200 rounded-xl p-3.5 text-xs sm:text-sm text-slate-800 leading-relaxed">
+              <div className="bg-emerald-50/40 border border-emerald-200 rounded-xl p-3 text-xs sm:text-sm text-slate-800 leading-relaxed">
                 {student.studentFeedback.goodPoints}
               </div>
             </div>
 
-            {/* 4. 더 나은 표현으로 다듬기 (Better Expressions) */}
-            <div className="mb-4">
+            {/* 5. 더 나은 표현으로 다듬기 (Better Expressions) */}
+            <div className="mb-3.5">
               <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center space-x-1.5">
                 <span className="text-slate-800">■</span>
                 <span>더 나은 표현으로 다듬기 (Better Expressions)</span>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {student.studentFeedback.betterExpressions.map((item, bIdx) => (
                   <div
                     key={bIdx}
-                    className="bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm space-y-1"
+                    className="bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs sm:text-sm space-y-1"
                   >
                     <div className="text-slate-600">
                       <span className="font-bold text-slate-700">[원문]</span> {item.original}
@@ -317,13 +410,13 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
               </div>
             </div>
 
-            {/* 5. 쓰기 발전 방향 (Next Step) */}
-            <div className="mb-4">
+            {/* 6. 쓰기 발전 방향 (Next Step) */}
+            <div className="mb-3.5">
               <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center space-x-1.5">
                 <span className="text-slate-800">■</span>
                 <span>쓰기 발전 방향 (Next Step)</span>
               </div>
-              <div className="bg-sky-50/40 border border-sky-200 rounded-xl p-3.5 text-xs sm:text-sm text-slate-800 leading-relaxed">
+              <div className="bg-sky-50/40 border border-sky-200 rounded-xl p-3 text-xs sm:text-sm text-slate-800 leading-relaxed">
                 {student.studentFeedback.nextStep}
               </div>
             </div>

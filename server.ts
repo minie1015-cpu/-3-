@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
+import { PDFDocument } from "pdf-lib";
 import { createServer as createViteServer } from "vite";
 
 dotenv.config();
@@ -37,6 +38,46 @@ app.get("/api/health", (req, res) => {
     hasApiKey: !!process.env.GEMINI_API_KEY,
     timestamp: new Date().toISOString(),
   });
+});
+
+// Server-side PDF splitting endpoint (splits multi-page PDF into 1-page PDF base64 list)
+app.post("/api/split-pdf", async (req, res) => {
+  try {
+    const { pdfBase64, fileName } = req.body;
+    if (!pdfBase64) {
+      return res.status(400).json({ error: "pdfBase64 is required" });
+    }
+
+    const buffer = Buffer.from(pdfBase64, "base64");
+    const srcDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const totalPages = srcDoc.getPageCount();
+
+    const baseName = (fileName || "document.pdf").replace(/\.pdf$/i, "");
+    const pages: Array<{ pageNumber: number; totalPages: number; pageBase64: string; fileName: string }> = [];
+
+    for (let i = 0; i < totalPages; i++) {
+      const subDoc = await PDFDocument.create();
+      const [copiedPage] = await subDoc.copyPages(srcDoc, [i]);
+      subDoc.addPage(copiedPage);
+      const pdfBytes = await subDoc.save();
+      const pageBase64 = Buffer.from(pdfBytes).toString("base64");
+      pages.push({
+        pageNumber: i + 1,
+        totalPages,
+        pageBase64,
+        fileName: `${baseName}_p${String(i + 1).padStart(2, "0")}.pdf`,
+      });
+    }
+
+    return res.json({
+      success: true,
+      totalPages,
+      pages,
+    });
+  } catch (err: any) {
+    console.error("PDF split error:", err);
+    return res.status(500).json({ error: err?.message || "PDF 분할 처리 실패" });
+  }
 });
 
 // Evaluate endpoint

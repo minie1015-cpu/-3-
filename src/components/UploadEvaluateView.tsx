@@ -20,12 +20,15 @@ import {
   XCircle,
   FileSpreadsheet,
   Printer,
+  FileStack,
+  Loader2,
 } from 'lucide-react';
 import { EvaluationRecord, StudentInfo, BatchFileItem } from '../types';
 import {
   SAMPLE_EVALUATIONS,
   generate28StudentBatchRecords,
 } from '../data/sampleStudents';
+import { splitPdfIntoPages, isPdfFile } from '../utils/pdfSplitter';
 
 interface UploadEvaluateViewProps {
   onAddEvaluation: (record: EvaluationRecord) => void;
@@ -44,7 +47,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
   const [activeMode, setActiveMode] = useState<'batch' | 'single'>('batch');
 
   // ==========================================
-  // BATCH MODE STATES (Up to 30 students)
+  // BATCH MODE STATES (Up to 50 students)
   // ==========================================
   const [batchQueue, setBatchQueue] = useState<BatchFileItem[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState<boolean>(false);
@@ -53,6 +56,10 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
   const [batchErrorCount, setBatchErrorCount] = useState<number>(0);
   const [batchStatusMessage, setBatchStatusMessage] = useState<string>('');
   const [batchSummaryRecordList, setBatchSummaryRecordList] = useState<EvaluationRecord[]>([]);
+
+  // Multi-page PDF splitting progress states
+  const [isSplittingPdf, setIsSplittingPdf] = useState<boolean>(false);
+  const [pdfSplitProgressText, setPdfSplitProgressText] = useState<string>('');
 
   const batchFileInputRef = useRef<HTMLInputElement>(null);
   const abortBatchRef = useRef<boolean>(false);
@@ -76,6 +83,12 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
   const [singleErrorMessage, setSingleErrorMessage] = useState<string | null>(null);
   const [lastSingleResult, setLastSingleResult] = useState<EvaluationRecord | null>(null);
 
+  // Multi-page PDF detection in single mode
+  const [multiPagePdfInSingle, setMultiPagePdfInSingle] = useState<{
+    file: File;
+    totalPages: number;
+  } | null>(null);
+
   const singleFileInputRef = useRef<HTMLInputElement>(null);
 
   // Helper to parse student info from filename (e.g., "3-1-02_김철수.jpg", "3_1_15_이영희.pdf")
@@ -94,30 +107,108 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
   };
 
   // ==========================================
-  // BATCH FILE HANDLING
+  // BATCH FILE HANDLING (Supports Multi-page PDF Auto Splitting)
   // ==========================================
-  const handleBatchFileSelection = (files: FileList | null) => {
+  const handleBatchFileSelection = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
-    const fileArray = Array.from(files).slice(0, 30); // Max 30 files
-    const newItems: BatchFileItem[] = fileArray.map((file, idx) => {
-      const parsedInfo = parseInfoFromFileName(file.name);
-      return {
-        id: `batch-item-${Date.now()}-${idx}`,
-        fileName: file.name,
-        fileSize: file.size,
-        file,
-        fileMimeType: file.type || 'image/jpeg',
-        studentInfo: parsedInfo,
-        status: 'idle',
-      };
-    });
+    const fileArray = Array.from(files);
+    const newItems: BatchFileItem[] = [];
+    let splitCount = 0;
 
-    setBatchQueue((prev) => {
-      const combined = [...prev, ...newItems];
-      return combined.slice(0, 30); // Hard cap at 30
-    });
-    setBatchSummaryRecordList([]);
+    setIsSplittingPdf(true);
+    setPdfSplitProgressText('답안지 파일 형식 검사 및 다중 페이지 PDF 분할 확인 중...');
+
+    try {
+      for (let fIdx = 0; fIdx < fileArray.length; fIdx++) {
+        const file = fileArray[fIdx];
+
+        if (isPdfFile(file)) {
+          setPdfSplitProgressText(`[${fIdx + 1}/${fileArray.length}] PDF 파일 페이지 수 분석 중... (${file.name})`);
+          try {
+            const pages = await splitPdfIntoPages(file, (curr, tot) => {
+              setPdfSplitProgressText(`[${file.name}] ${tot}페이지 중 ${curr}번째 학생 답안지 추출 중...`);
+            });
+
+            if (pages.length > 1) {
+              splitCount += pages.length;
+              // Add each page as an individual student queue item
+              const parsedInfo = parseInfoFromFileName(file.name);
+              pages.forEach((page) => {
+                newItems.push({
+                  id: `batch-item-${Date.now()}-${fIdx}-p${page.pageNumber}`,
+                  fileName: `${file.name.replace(/\.pdf$/i, '')} (p.${page.pageNumber}/${page.totalPages})`,
+                  fileSize: page.file.size,
+                  file: page.file,
+                  fileBase64: page.base64,
+                  fileMimeType: 'application/pdf',
+                  studentInfo: {
+                    grade: parsedInfo.grade || '3',
+                    classNum: parsedInfo.classNum || '',
+                    studentNum: parsedInfo.studentNum || String(page.pageNumber),
+                    name: parsedInfo.name ? `${parsedInfo.name} (p.${page.pageNumber})` : '',
+                  },
+                  status: 'idle',
+                  isPdfPage: true,
+                  pageIndex: page.pageNumber,
+                  totalPdfPages: page.totalPages,
+                  originalPdfName: file.name,
+                });
+              });
+              continue;
+            } else if (pages.length === 1) {
+              // 1 page PDF
+              const page = pages[0];
+              const parsedInfo = parseInfoFromFileName(file.name);
+              newItems.push({
+                id: `batch-item-${Date.now()}-${fIdx}`,
+                fileName: file.name,
+                fileSize: file.size,
+                file: page.file,
+                fileBase64: page.base64,
+                fileMimeType: 'application/pdf',
+                studentInfo: parsedInfo,
+                status: 'idle',
+                isPdfPage: false,
+              });
+              continue;
+            }
+          } catch (pdfErr) {
+            console.warn('PDF splitting error, falling back to raw file:', pdfErr);
+          }
+        }
+
+        // Standard image or fallback file
+        const parsedInfo = parseInfoFromFileName(file.name);
+        newItems.push({
+          id: `batch-item-${Date.now()}-${fIdx}`,
+          fileName: file.name,
+          fileSize: file.size,
+          file,
+          fileMimeType: file.type || 'image/jpeg',
+          studentInfo: parsedInfo,
+          status: 'idle',
+        });
+      }
+
+      setBatchQueue((prev) => {
+        const combined = [...prev, ...newItems];
+        return combined.slice(0, 50); // Supports up to 50 students
+      });
+      setBatchSummaryRecordList([]);
+
+      if (splitCount > 0) {
+        setBatchStatusMessage(
+          `✓ 다중 페이지 PDF에서 총 ${splitCount}명의 학생 답안지가 개별 페이지로 완벽하게 자동 분할되어 일괄 채점 대기열에 등록되었습니다!`
+        );
+      }
+    } catch (err: any) {
+      console.error('Batch file selection error:', err);
+      setBatchStatusMessage('파일 등록 중 일부 오류가 발생했습니다: ' + (err?.message || ''));
+    } finally {
+      setIsSplittingPdf(false);
+      setPdfSplitProgressText('');
+    }
   };
 
   const handleRemoveFromQueue = (id: string) => {
@@ -218,6 +309,8 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
           scores: resData.scores,
           extractedText: resData.extractedText || '',
           wordCount: resData.wordCount || 0,
+          sentenceCounts: resData.sentenceCounts,
+          languageAnalysis: resData.languageAnalysis,
           rubricNotes: resData.rubricNotes || {
             body1Note: '',
             body2Note: '',
@@ -418,13 +511,29 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
     processSingleFile(file);
   };
 
-  const processSingleFile = (file: File) => {
+  const processSingleFile = async (file: File) => {
     setSingleFile(file);
     setSingleErrorMessage(null);
+    setMultiPagePdfInSingle(null);
 
     const parsed = parseInfoFromFileName(file.name);
     if (parsed.name) {
       setSingleStudentInfo((prev) => ({ ...prev, ...parsed }));
+    }
+
+    // Check if uploaded file is a multi-page PDF
+    if (isPdfFile(file)) {
+      try {
+        const pages = await splitPdfIntoPages(file);
+        if (pages.length > 1) {
+          setMultiPagePdfInSingle({
+            file,
+            totalPages: pages.length,
+          });
+        }
+      } catch (pdfErr) {
+        console.warn('PDF inspection in single mode:', pdfErr);
+      }
     }
 
     const reader = new FileReader();
@@ -441,6 +550,16 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleTransferMultiPageToBatch = () => {
+    if (!multiPagePdfInSingle) return;
+    const targetFile = multiPagePdfInSingle.file;
+    setActiveMode('batch');
+    const dt = new DataTransfer();
+    dt.items.add(targetFile);
+    handleBatchFileSelection(dt.files);
+    setMultiPagePdfInSingle(null);
   };
 
   const handleSingleEvaluate = async () => {
@@ -621,19 +740,33 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
               <div>
                 <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
                   <UploadCloud className="w-5 h-5 text-indigo-600" />
-                  <span>스캔본 묶음 파일 업로드 (최대 30명 동시 선택)</span>
+                  <span>스캔본 파일 업로드 (다중 페이지 PDF 자동 분할 채점 지원)</span>
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  평판 스캐너나 스마트폰으로 스캔한 학생 답안지 이미지(JPG, PNG) 또는 PDF 파일을 한꺼번에 드래그하거나 선택하세요.
+                  평판 스캐너로 한 번에 스캔한 <strong>다중 페이지 PDF(한 파일에 여러 학생)</strong>도 지원됩니다. 학생별로 1장씩 자동 분할되어 대기열에 순서대로 등록됩니다.
                 </p>
               </div>
               <div className="flex items-center space-x-2 text-xs">
-                <span className="font-semibold text-slate-600">등록된 파일:</span>
+                <span className="font-semibold text-slate-600">등록된 답안지:</span>
                 <span className="px-2 py-0.5 rounded-md font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  {batchQueue.length} / 30개
+                  {batchQueue.length} / 50명
                 </span>
               </div>
             </div>
+
+            {/* Multi-page PDF Splitting Loading Banner */}
+            {isSplittingPdf && (
+              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center space-x-3 text-xs text-indigo-900">
+                <Loader2 className="w-5 h-5 animate-spin text-indigo-600 shrink-0" />
+                <div className="flex-1">
+                  <p className="font-bold flex items-center space-x-1.5">
+                    <FileStack className="w-4 h-4 text-indigo-600" />
+                    <span>다중 페이지 PDF를 학생별 개별 답안지로 자동 분할 처리 중입니다...</span>
+                  </p>
+                  <p className="text-[11px] text-indigo-700 mt-0.5 font-medium">{pdfSplitProgressText}</p>
+                </div>
+              </div>
+            )}
 
             {/* Drag & Drop Area */}
             <div
@@ -659,14 +792,15 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                 </div>
                 <div>
                   <p className="text-sm font-bold text-slate-800">
-                    <span className="text-indigo-600 underline">스캔 파일 여러 개 선택하기</span> 또는 여기로 드래그 앤 드롭
+                    <span className="text-indigo-600 underline">스캔 파일 여러 개 또는 다중 페이지 PDF 선택하기</span> 또는 여기로 드래그 앤 드롭
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    한 번에 최대 30장의 답안지 스캔본(JPG, PNG, PDF)을 지원합니다.
+                    한 파일에 30페이지가 묶인 스캔 PDF나 개별 이미지 파일(JPG, PNG, PDF) 모두 완벽 지원합니다.
                   </p>
                 </div>
-                <div className="inline-flex items-center space-x-2 text-[11px] text-slate-400 bg-white px-3 py-1 rounded-full border border-slate-200">
-                  <span>* 파일명에 학번이나 이름이 포함되어 있으면(예: 3-1-05_김철수.jpg) 학생 정보가 자동 추출됩니다.</span>
+                <div className="inline-flex items-center space-x-2 text-[11px] text-indigo-600 bg-indigo-50/80 px-3 py-1 rounded-full border border-indigo-200">
+                  <FileStack className="w-3.5 h-3.5" />
+                  <span>스캐너에서 한 번에 스캔된 다중 페이지 PDF 1개 파일만 업로드하셔도 각 학생별로 자동 분리 채점됩니다!</span>
                 </div>
               </div>
             </div>
@@ -804,10 +938,18 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                           <td className="py-3 px-4 text-center font-mono text-slate-400">
                             {idx + 1}
                           </td>
-                          <td className="py-3 px-4 font-mono font-medium text-slate-900 max-w-[200px] truncate">
-                            {item.fileName}
-                            <span className="block text-[10px] text-slate-400 font-sans">
-                              {(item.fileSize / 1024).toFixed(1)} KB
+                          <td className="py-3 px-4 font-mono font-medium text-slate-900 max-w-[220px]">
+                            <div className="flex items-center space-x-1.5 flex-wrap">
+                              <span className="truncate">{item.fileName}</span>
+                              {item.isPdfPage && (
+                                <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                                  <FileStack className="w-3 h-3 text-amber-700" />
+                                  <span>p.{item.pageIndex}/{item.totalPdfPages}</span>
+                                </span>
+                              )}
+                            </div>
+                            <span className="block text-[10px] text-slate-400 font-sans mt-0.5">
+                              {(item.fileSize / 1024).toFixed(1)} KB {item.originalPdfName ? `(원본: ${item.originalPdfName})` : ''}
                             </span>
                           </td>
                           <td className="py-3 px-4">
@@ -1103,6 +1245,31 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                     )}
                   </div>
 
+                  {/* Multi-page PDF detected notice in Single Mode */}
+                  {multiPagePdfInSingle && (
+                    <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="flex items-start space-x-2.5">
+                        <FileStack className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-amber-900">
+                            다중 페이지 PDF 감지 (총 {multiPagePdfInSingle.totalPages}페이지)
+                          </p>
+                          <p className="text-amber-700 text-[11px] mt-0.5">
+                            업로드하신 PDF는 학생 여러 명의 답안지가 한 파일에 묶여 있는 스캔본입니다.
+                            학급 일괄 채점으로 전환하시면 전원 1장씩 자동 분할되어 한 번에 채점할 수 있습니다!
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleTransferMultiPageToBatch}
+                        className="shrink-0 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition shadow-xs flex items-center space-x-1.5"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>학급 일괄 채점으로 전환하여 {multiPagePdfInSingle.totalPages}명 전체 자동 분할하기</span>
+                      </button>
+                    </div>
+                  )}
+
                   {singlePreviewUrl && (
                     <div className="mt-3 p-2 bg-slate-100 rounded-lg flex items-center space-x-3">
                       <img
@@ -1233,9 +1400,9 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                   {/* Student Feedback Preview */}
                   <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/30 space-y-3">
                     <div className="text-xs font-bold text-indigo-950 flex items-center justify-between">
-                      <span>학생용 피드백 미리보기 (A4 1장 전면 규격)</span>
+                      <span>학생용 피드백 미리보기 ({lastSingleResult.studentInfo.grade}학년 {lastSingleResult.studentInfo.classNum}반 {lastSingleResult.studentInfo.studentNum}번 · 이름 비공개)</span>
                       <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-medium">
-                        성장 중심 피드백
+                        반·번호 표기
                       </span>
                     </div>
 
@@ -1263,6 +1430,42 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                           </span>{' '}
                           ({lastSingleResult.studentFeedback.achievementLevels.wordCountNote})
                         </div>
+                      </div>
+
+                      {/* Language Analysis & Errors */}
+                      <div className="pt-1">
+                        <div className="font-bold text-[11px] text-amber-900 flex items-center justify-between">
+                          <span>■ 언어형식 평가 및 오류 감점 안내</span>
+                          {lastSingleResult.languageAnalysis && (
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                              {lastSingleResult.languageAnalysis.deduction > 0
+                                ? `오류 ${lastSingleResult.languageAnalysis.errorCount}개 (-${lastSingleResult.languageAnalysis.deduction}점 감점)`
+                                : '감점 없음'}
+                            </span>
+                          )}
+                        </div>
+                        {lastSingleResult.languageAnalysis?.errors && lastSingleResult.languageAnalysis.errors.length > 0 ? (
+                          <div className="mt-1 space-y-1 pl-1">
+                            {lastSingleResult.languageAnalysis.errors.slice(0, 3).map((err, idx) => (
+                              <div key={idx} className="bg-amber-50/50 p-1.5 rounded border border-amber-200 text-[11px] flex items-center justify-between">
+                                <div>
+                                  <span className="line-through text-rose-700 mr-1">{err.text}</span>
+                                  <span className="text-indigo-900 font-bold">→ {err.correction}</span>
+                                </div>
+                                <span className="text-[10px] text-amber-800 font-medium">{err.errorType}</span>
+                              </div>
+                            ))}
+                            {lastSingleResult.languageAnalysis.errors.length > 3 && (
+                              <div className="text-[10px] text-slate-500 italic">
+                                * 외 {lastSingleResult.languageAnalysis.errors.length - 3}개 오류 포함 (피드백지 전문에서 확인)
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-600 pl-1 mt-0.5">
+                            ✓ 주요 문법/어휘 오류 2개 이하로 감점 없이 기본 점수를 획득하였습니다.
+                          </p>
+                        )}
                       </div>
 
                       <div className="pt-1 font-bold text-[11px] text-emerald-800">
