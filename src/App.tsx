@@ -6,7 +6,6 @@ import { StudentPrintView } from './components/StudentPrintView';
 import { AppsScriptGuideView } from './components/AppsScriptGuideView';
 import { RubricInfoModal } from './components/RubricInfoModal';
 import { EvaluationRecord } from './types';
-import { SAMPLE_EVALUATIONS } from './data/sampleStudents';
 import { sanitizeEvaluationRecord } from './utils/sanitize';
 
 export default function App() {
@@ -17,17 +16,20 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(sanitizeEvaluationRecord);
+          // Exclude any pre-existing sample records so the app starts clean
+          return parsed
+            .filter((r) => r && r.id && !r.id.startsWith('sample-'))
+            .map(sanitizeEvaluationRecord);
         }
       }
     } catch (e) {
       console.warn('Failed to load records from localStorage', e);
     }
-    return SAMPLE_EVALUATIONS.map(sanitizeEvaluationRecord);
+    return [];
   });
 
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
-    records[0]?.id || SAMPLE_EVALUATIONS[0]?.id || null
+    records[0]?.id || null
   );
   const [isRubricModalOpen, setIsRubricModalOpen] = useState(false);
 
