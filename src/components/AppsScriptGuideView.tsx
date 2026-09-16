@@ -34,7 +34,7 @@ export const AppsScriptGuideView: React.FC = () => {
 // 1. 사용자 설정값 (선생님의 구글 드라이브 ID 및 API 키 입력)
 const CONFIG = {
   GEMINI_API_KEY: '여기에_선생님의_GEMINI_API_KEY_입력',
-  MODEL_NAME: 'gemini-3.8-flash',
+  MODEL_NAME: 'gemini-3.6-flash',
   SCAN_FOLDER_ID: '여기에_스캔본_저장_구글드라이브_폴더_ID_입력',
   OUTPUT_FEEDBACK_FOLDER_ID: '여기에_학생용PDF_저장_구글드라이브_폴더_ID_입력',
   SHEET_NAME: '성적관리시트'
@@ -117,7 +117,7 @@ function runBatchEvaluation() {
 }
 
 /**
- * 3. Gemini 3.8-flash API 호출 함수
+ * 3. Gemini 3.6-flash API 호출 함수
  */
 function callGeminiGrading(base64Data, mimeType, fileName) {
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + CONFIG.MODEL_NAME + ':generateContent?key=' + CONFIG.GEMINI_API_KEY;

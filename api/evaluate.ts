@@ -9,9 +9,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { imageBase64, mimeType, studentText, studentInfo } = req.body;
 
-    if (!imageBase64 && !studentText) {
+    if (!imageBase64 && typeof studentText !== 'string') {
       return res.status(400).json({
         error: '답안지 이미지/PDF 또는 텍스트 입력이 필요합니다.',
+      });
+    }
+
+    // Direct instant return if purely empty/blank text is submitted
+    if (!imageBase64 && (!studentText || !studentText.trim())) {
+      const blankData = {
+        studentInfo: {
+          grade: studentInfo?.grade || '3',
+          classNum: studentInfo?.classNum || '1',
+          studentNum: studentInfo?.studentNum || '1',
+          name: studentInfo?.name || '학생',
+        },
+        extractedText: '(본문 미작성 - 백지 제출)',
+        wordCount: 0,
+        sentenceCounts: { body1SentenceCount: 0, body2SentenceCount: 0 },
+        scores: {
+          body1Score: 1,
+          body2Score: 1,
+          languageScore: 1,
+          wordCountScore: 1,
+          totalScore: 4,
+        },
+        languageAnalysis: {
+          participleUsed: false,
+          becauseUsed: false,
+          baseScore: 1,
+          errorCount: 0,
+          deduction: 0,
+          finalLanguageScore: 1,
+          errors: [],
+        },
+        rubricNotes: {
+          body1Note: '본문1 미작성 (0문장 / 백지 1점)',
+          body2Note: '본문2 미작성 (0문장 / 백지 1점)',
+          languageNote: '본문 미작성으로 명사 수식 분사 및 because 미활용 (기본 1점)',
+          wordCountNote: '0단어 (백지 제출: 1점)',
+        },
+        teacherMemo: '백지 제출 (본문1 0문장, 본문2 0문장, 필수 어법 미활용, 0단어 -> 최저 기본점수 4점 부여)',
+        neisNote: '영어 쓰기 과제에 미응시/백지로 제출하여 기본적인 영작문 구성 및 핵심 어법 표현에 대한 추가적인 기초 지도가 요구됨.',
+        studentFeedback: {
+          achievementLevels: {
+            contentRating: 1,
+            contentStars: '★☆☆☆☆',
+            languageRating: 1,
+            languageStars: '★☆☆☆☆',
+            volumeRating: 1,
+            volumeStars: '★☆☆☆☆',
+            wordCountNote: '0단어 (백지 제출)',
+          },
+          goodPoints: '답안지에 작성된 본문 내용이 없습니다 (백지 제출). 다음 수행평가에서는 배운 핵심 표현을 한 문장이라도 용기를 내어 작성해 보세요.',
+          betterExpressions: [
+            {
+              original: '(본문 미작성)',
+              improved: 'A doctor treating sick patients is a hero because she saves lives.',
+              reason: '명사를 수식하는 분사(treating sick patients)와 이유의 접속사 because를 결합한 모범 예시입니다.',
+            },
+          ],
+          nextStep: '수업 시간에 배운 명사 수식 분사(~ing) 표현과 이유의 접속사 because를 활용하여 기본 문장 쓰기 연습부터 차근차근 시작해 보세요.',
+        },
+      };
+
+      return res.status(200).json({
+        success: true,
+        data: blankData,
       });
     }
 
@@ -38,23 +102,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
    - 1문장 작성: 2점
    - 0문장 / 미작성: 1점
 
-3. 언어형식 (명사 수식 분사 표현 + 접속사 because, 기본 4점 및 문법 오류 감점제, 1~4점):
-   * 기본 점수 산출: 명사수식 분사(2점) + because(2점) = 기본 4점 (하나만 사용 시 2점, 둘 다 미사용 시 1점)
-   * ★ [핵심 지침: 대소문자 감점 제외 및 피드백 안내]:
-     - **대소문자 오류(문장 첫 글자 소문자, 고유명사 소문자, 소문자 i 등)는 감점 대상에서 완전히 제외(0점 감점, isDeducted: false)**합니다!
-     - 하지만 **학생용 피드백(Better Expressions 및 교정 안내)으로는 대소문자 바른 표기를 다정하게 반드시 안내**해야 합니다!
-     - 감점 산정용 errorCount 및 deduction 계산에서는 대소문자 오류를 절대로 카운트하지 마세요.
-   * 감점 대상 오류(대소문자 제외한 철자, 전치사, 수일치, 동사누락 등):
-     - 감점 대상 오류 0~2개: 감점 없음 (기본 점수 유지)
-     - 감점 대상 오류 3~5개: 1점 감점 (-1점 차감)
+3. 언어형식 (명사 수식 분사 표현 + 접속사 because, 기본 1~4점 및 어법 감점제):
+   * 기본 점수 산출 (교사용 내부 기준):
+     - 분사(~ing/p.p.)와 because 2가지를 모두 바르게 활용 시: 기본 4점
+     - 둘 중 1가지만 활용 시: 기본 3점
+     - 작성 및 시도하였으나 형태가 어색하거나 불완전한 경우: 기본 2점
+     - 둘 다 미작성 또는 백지: 기본 1점
+   * ★★★ [절대 감점 금지 항목 1: 대소문자 표기 오류 - 점수에 반영 금지!] ★★★
+     - **문장 첫 글자 소문자, 고유명사 소문자, 1인칭 I 소문자 등 대소문자(Capitalization) 오류는 절대로 점수에서 감점하지 마(0점 감점)!**
+     - 점수에 절대 반영하지 말고, languageAnalysis.errors에 기록하되 errorType: '대소문자 표기 안내', isDeducted: false 로 지정할 것.
+   * ★★★ [절대 감점 금지 항목 2: 단어/어휘 선택 - 너무 가혹하므로 감점 금지!] ★★★
+     - **어색한 단어 선택(Word Choice / Diction / Collocation)은 절대로 점수에서 감점하지 마(0점 감점, isDeducted: false)!**
+     - 학생의 기를 꺾지 않도록 점수에는 일체 반영하지 말고, 대신 **[더 나은 표현으로 다듬기(Better Expressions)]**에 친절한 제안으로 추가해 줄 것! (예: hear music → listen to music, make happy → bring joy 등)
+   * 감점 대상 오류(대소문자 및 단어선택 제외한 중대한 문법/구문 구조 오류에 한함):
+     - 감점 대상 어법 오류 0~2개: 감점 없음 (0점 감점)
+     - 감점 대상 어법 오류 3~5개: 1점 감점 (-1점 차감)
      - 감점 대상 오류 6개 이상: 2점 감점 (-2점 차감)
    * 최종 점수 = Math.max(1, 기본 점수 - 감점)
 
 4. 글의 구성 (단어 수 기준, 1~4점):
    - 80단어 이상: 4점 / 60~79단어: 3점 / 59단어 이하: 2점 / 백지: 1점
 
-[보안 지침]
-- 학생용 피드백에는 점수 수치나 감점 내역을 절대 노출하지 말 것. 별점(★)과 다정한 칭찬 및 교정 제안으로 구성할 것.`;
+★ [중요: 백지 제출 및 미작성 답안 특별 판정 기준]
+만약 답안지가 백지이거나, 본문이 작성되지 않았거나, 학생이 쓴 영문 텍스트가 사실상 없는 경우(영단어 3개 이하 또는 빈 양식):
+- 절대 "잘 썼다", "감점 없음", "4점 만점"으로 채점하거나 칭찬하지 말 것!
+- extractedText: "(본문 미작성 - 백지 제출)"
+- wordCount: 0
+- sentenceCounts: { body1SentenceCount: 0, body2SentenceCount: 0 }
+- languageAnalysis: participleUsed: false, becauseUsed: false, baseScore: 1, errorCount: 0, deduction: 0, finalLanguageScore: 1, errors: []
+- scores: body1Score: 1, body2Score: 1, languageScore: 1, wordCountScore: 1, totalScore: 4 (최저 기본점 4점)
+- rubricNotes: body1Note: "본문1 미작성 (0문장 / 백지 1점)", body2Note: "본문2 미작성 (0문장 / 백지 1점)", languageNote: "본문 미작성으로 분사 및 because 미활용 (기본 1점)", wordCountNote: "0단어 (백지 제출: 1점)"
+- teacherMemo: "백지 제출 (본문1 0문장, 본문2 0문장, 필수 문법 미사용, 0단어 -> 최저 기본점수 4점 부여)"
+- neisNote: "영어 쓰기 과제에 미응시/백지로 제출하여 기본적인 영작문 구성 및 핵심 어법 표현에 대한 추가적인 기초 지도가 요구됨."
+- studentFeedback:
+  * contentRating: 1 (★☆☆☆☆), languageRating: 1 (★☆☆☆☆), volumeRating: 1 (★☆☆☆☆), wordCountNote: "0단어 (백지 제출)"
+  * goodPoints: "답안지에 작성된 본문 내용이 없습니다 (백지 제출). 다음 수행평가에서는 배운 핵심 표현을 한 문장이라도 용기를 내어 작성해 보세요."
+  * betterExpressions: [{ original: "(본문 미작성)", improved: "A firefighter helping people is a hero because he is brave.", reason: "명사를 수식하는 분사(helping people)와 이유의 접속사 because를 결합한 모범 예문입니다." }]
+  * nextStep: "수업 시간에 배운 명사 수식 분사(~ing) 표현과 이유의 접속사 because를 활용하여 기본 문장 쓰기 연습부터 차근차근 시작해 보세요."
+
+[중요 보안/가림 지침 - 학생용 피드백 노출 절대 금지]
+- **학생들에게는 [채점 기준], 점수(1~4점 등), 감점 산정 공식(-1점 차감 등), 기본 4점 기준('2개 다 쓰면 4점, 1개 쓰면 3점, 이상하게 쓰면 2점' 등)을 절대로 노출하거나 언급하지 말 것!**
+- 굳이 밝힐 필요가 없으므로 학생용 피드백에는 오직 학생의 성장을 돕는 다정하고 격려하는 피드백(영역별 별점, 칭찬, Better Expressions, Next Step)만 제공할 것.`;
 
     const contents: any[] = [];
 
@@ -68,13 +156,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     let userPrompt = `다음 학생의 답안을 분석하고 16점 객관적 루브릭에 맞춰 채점해 줘.
-- 내용 영역(본문1, 본문2)은 문법 요소를 별도로 분리하고 문장 수 중심의 객관적 기준(3문장: 4점 / 2문장: 3점 / 1문장: 2점 / 0문장: 1점)에 따라 점수를 부여해 줘.
-- 언어형식(4점 만점):
-  * 분사(2점)와 because(2점) 사용 시 기본 4점(하나만 사용 시 2점, 둘 다 미사용 시 1점).
-  * [중요] 대소문자 표기 오류(문장 첫 글자 소문자, 고유명사 소문자 등)는 감점 대상에서 완전히 제외(0점 감점)! 다만 학생 피드백(Better Expressions 및 errors 목록)에는 교정 안내를 꼭 제공하고 isDeducted: false 로 표시할 것.
-  * 감점 대상 문법/철자 오류(대소문자 제외) 개수를 세어 0~2개 0점 감점, 3~5개 1점 감점, 6개 이상 2점 감점하여 최종 언어형식 점수를 산출해 줘.
+- 내용 영역(본문1, 본문2)은 문장 수 중심의 객관적 기준(3문장: 4점 / 2문장: 3점 / 1문장: 2점 / 0문장: 1점)에 따라 점수를 부여해 줘.
+- 언어형식:
+  * 분사 표현과 because 둘 다 바르게 쓰면 기본 4점, 둘 중 하나만 쓰면 기본 3점, 시도하였으나 어색하면 2점, 미작성 1점.
+  * [필수 준수] 대소문자 표기 오류(문장 첫 글자 소문자 등)는 점수 감점 대상에서 완전히 제외(0점 감점, 점수에 반영 금지)!
+  * [필수 준수] 단어 선택(Word Choice, 예: hear music -> listen to music)은 학생에게 너무 가혹하므로 절대로 점수 감점하지 말 것(0점 감점)! 대신 Better Expressions에 친절하게 제안해 줄 것.
+  * 중대한 문법 오류(대소문자/단어선택 제외) 0~2개 0점 감점, 3~5개 1점 감점, 6개 이상 2점 감점하여 최종 언어형식 점수를 산출해 줘.
 - 글의 구성은 80단어 이상 4점, 60~79단어 3점, 59단어 이하 2점, 백지 1점으로 부여해 줘.
-- 학생용 피드백에는 점수나 감점 기준표를 절대 노출하지 말 것.\n`;
+- 학생용 피드백에는 [채점 기준], 점수, 감점 산정 공식, 2점/4점 기준 등을 절대 노출하지 말 것.\n`;
     if (studentText) {
       userPrompt += `[학생 답안 텍스트]:\n"""\n${studentText}\n"""\n`;
     }
@@ -85,9 +174,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     contents.push({ text: userPrompt });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: contents,
+    const candidateModels = ['gemini-3.6-flash', 'gemini-3.8-flash'];
+    let response: any = null;
+    let lastErr: any = null;
+
+    for (const model of candidateModels) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          response = await ai.models.generateContent({
+            model: model,
+            contents: contents,
       config: {
         systemInstruction,
         temperature: 0.2,
@@ -233,65 +329,242 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
 
-    const parsed = JSON.parse(response.text || '{}');
-
-    // 점수 재검증 로직
-    const scores = parsed.scores || {};
-    const b1 = parsed.sentenceCounts?.body1SentenceCount ?? 3;
-    scores.body1Score = b1 >= 3 ? 4 : b1 === 2 ? 3 : b1 === 1 ? 2 : 1;
-
-    const b2 = parsed.sentenceCounts?.body2SentenceCount ?? 3;
-    scores.body2Score = b2 >= 3 ? 4 : b2 === 2 ? 3 : b2 === 1 ? 2 : 1;
-
-    const wc = parsed.wordCount ?? 80;
-    scores.wordCountScore = wc >= 80 ? 4 : wc >= 60 ? 3 : wc >= 1 ? 2 : 1;
-
-    // 언어형식 검증: 대소문자는 감점 대상에서 완전히 제외하고 피드백으로만 제공
-    if (parsed.languageAnalysis) {
-      const allErrors = Array.isArray(parsed.languageAnalysis.errors)
-        ? parsed.languageAnalysis.errors
-        : [];
-
-      let deductionErrorCount = 0;
-      allErrors.forEach((err: any) => {
-        const errorTypeStr = String(err.errorType || '').toLowerCase();
-        const textStr = String(err.text || '').trim();
-        const corrStr = String(err.correction || '').trim();
-
-        const isCapitalization =
-          err.isDeducted === false ||
-          errorTypeStr.includes('대소문자') ||
-          errorTypeStr.includes('capital') ||
-          errorTypeStr.includes('case') ||
-          (textStr.toLowerCase() === corrStr.toLowerCase() && textStr !== corrStr);
-
-        if (isCapitalization) {
-          err.isDeducted = false;
-          if (!err.errorType.includes('대소문자')) {
-            err.errorType = '대소문자 (감점제외 안내)';
-          }
-        } else {
-          err.isDeducted = true;
-          deductionErrorCount++;
+          if (response && response.text) break;
+        } catch (err: any) {
+          lastErr = err;
+          console.warn(`Attempt ${attempt} with ${model} failed:`, err?.message || err);
+          await new Promise((r) => setTimeout(r, 800 * attempt));
         }
-      });
-
-      parsed.languageAnalysis.errors = allErrors;
-      parsed.languageAnalysis.errorCount = deductionErrorCount;
-
-      const deduction = deductionErrorCount >= 6 ? 2 : deductionErrorCount >= 3 ? 1 : 0;
-      parsed.languageAnalysis.deduction = deduction;
-
-      const baseScore = parsed.languageAnalysis.baseScore || 4;
-      scores.languageScore = Math.max(1, Math.min(4, baseScore - deduction));
-      parsed.languageAnalysis.finalLanguageScore = scores.languageScore;
-    } else {
-      scores.languageScore = 4;
+      }
+      if (response && response.text) break;
     }
 
-    scores.totalScore =
-      scores.body1Score + scores.body2Score + scores.languageScore + scores.wordCountScore;
-    parsed.scores = scores;
+    if (!response || !response.text) {
+      throw lastErr || new Error('Gemini API 호출에 실패했습니다. 다시 시도해 주세요.');
+    }
+
+    const parsed = JSON.parse(response.text || '{}');
+
+    // Check if the student's submission is blank / unwritten
+    const rawText = (parsed.extractedText || studentText || '').trim();
+    const englishWords = rawText.match(/[a-zA-Z]{2,}/g) || [];
+    const isExplicitBlank =
+      !rawText ||
+      rawText === '(본문 미작성)' ||
+      rawText.includes('백지 제출') ||
+      rawText.includes('본문 미작성') ||
+      (typeof parsed.wordCount === 'number' && parsed.wordCount === 0) ||
+      englishWords.length <= 3;
+
+    if (isExplicitBlank) {
+      parsed.extractedText = '(본문 미작성 - 백지 제출)';
+      parsed.wordCount = 0;
+      parsed.sentenceCounts = { body1SentenceCount: 0, body2SentenceCount: 0 };
+      parsed.scores = {
+        body1Score: 1,
+        body2Score: 1,
+        languageScore: 1,
+        wordCountScore: 1,
+        totalScore: 4,
+      };
+      parsed.languageAnalysis = {
+        participleUsed: false,
+        becauseUsed: false,
+        baseScore: 1,
+        errorCount: 0,
+        deduction: 0,
+        finalLanguageScore: 1,
+        errors: [],
+      };
+      parsed.rubricNotes = {
+        body1Note: '본문1 미작성 (0문장 / 백지 1점)',
+        body2Note: '본문2 미작성 (0문장 / 백지 1점)',
+        languageNote: '본문 미작성으로 명사 수식 분사 및 because 미활용 (기본 1점)',
+        wordCountNote: '0단어 (백지 제출: 1점)',
+      };
+      parsed.teacherMemo = '백지 제출 (본문1 0문장, 본문2 0문장, 필수 어법 미활용, 0단어 -> 최저 기본점수 4점 부여)';
+      parsed.neisNote = '영어 쓰기 과제에 미응시/백지로 제출하여 기본적인 영작문 구성 및 핵심 어법 표현에 대한 추가적인 기초 지도가 요구됨.';
+      parsed.studentFeedback = {
+        achievementLevels: {
+          contentRating: 1,
+          contentStars: '★☆☆☆☆',
+          languageRating: 1,
+          languageStars: '★☆☆☆☆',
+          volumeRating: 1,
+          volumeStars: '★☆☆☆☆',
+          wordCountNote: '0단어 (백지 제출)',
+        },
+        goodPoints: '답안지에 작성된 본문 내용이 없습니다 (백지 제출). 다음 수행평가에서는 배운 핵심 표현을 한 문장이라도 용기를 내어 작성해 보세요.',
+        betterExpressions: [
+          {
+            original: '(본문 미작성)',
+            improved: 'A doctor treating sick patients is a hero because she saves lives.',
+            reason: '명사를 수식하는 분사(treating sick patients)와 이유의 접속사 because를 결합한 모범 예시입니다.',
+          },
+        ],
+        nextStep: '수업 시간에 배운 명사 수식 분사(~ing) 표현과 이유의 접속사 because를 활용하여 기본 문장 쓰기 연습부터 차근차근 시작해 보세요.',
+      };
+    } else {
+      // 점수 재검증 로직
+      const scores = parsed.scores || {
+        body1Score: 4,
+        body2Score: 4,
+        languageScore: 4,
+        wordCountScore: 4,
+        totalScore: 16,
+      };
+
+      // 언어형식 검증: 대소문자 및 단어 선택은 감점 대상에서 완전히 제외하고 피드백으로만 제공
+      if (parsed.languageAnalysis) {
+        const allErrors = Array.isArray(parsed.languageAnalysis.errors)
+          ? parsed.languageAnalysis.errors
+          : [];
+
+        let deductionErrorCount = 0;
+        allErrors.forEach((err: any) => {
+          const errorTypeStr = String(err.errorType || '').toLowerCase();
+          const reasonStr = String(err.reason || '').toLowerCase();
+          const textStr = String(err.text || '').trim();
+          const corrStr = String(err.correction || '').trim();
+
+          // 1. 대소문자 오류 판별 (점수에 반영 금지, 감점 절대 제외)
+          const isCapitalization =
+            err.isDeducted === false ||
+            errorTypeStr.includes('대소문자') ||
+            errorTypeStr.includes('capital') ||
+            errorTypeStr.includes('case') ||
+            errorTypeStr.includes('대문자') ||
+            errorTypeStr.includes('소문자') ||
+            reasonStr.includes('대소문자') ||
+            reasonStr.includes('대문자') ||
+            reasonStr.includes('소문자') ||
+            reasonStr.includes('첫 글자') ||
+            reasonStr.includes('첫글자') ||
+            reasonStr.includes('capital') ||
+            (textStr.toLowerCase() === corrStr.toLowerCase() && textStr !== corrStr);
+
+          // 2. 단어/어휘 선택 판별 (너무 가혹하므로 감점 금지, Better Expressions로 제안)
+          const isWordChoice =
+            errorTypeStr.includes('단어') ||
+            errorTypeStr.includes('어휘') ||
+            errorTypeStr.includes('word') ||
+            errorTypeStr.includes('diction') ||
+            errorTypeStr.includes('collocation') ||
+            errorTypeStr.includes('표현') ||
+            errorTypeStr.includes('선택') ||
+            reasonStr.includes('단어 선택') ||
+            reasonStr.includes('어휘') ||
+            reasonStr.includes('단어선택') ||
+            reasonStr.includes('어색') ||
+            reasonStr.includes('더 자연스러운') ||
+            reasonStr.includes('표현 제안') ||
+            reasonStr.includes('word choice') ||
+            reasonStr.includes('collocation');
+
+          if (isCapitalization) {
+            err.isDeducted = false;
+            err.errorType = '대소문자 표기 안내';
+          } else if (isWordChoice) {
+            err.isDeducted = false;
+            err.errorType = '단어/어휘 선택 제안';
+            // Better Expressions에 추가
+            if (parsed.studentFeedback && Array.isArray(parsed.studentFeedback.betterExpressions)) {
+              const alreadyExists = parsed.studentFeedback.betterExpressions.some(
+                (b: any) =>
+                  (b.original && textStr && (b.original.includes(textStr) || textStr.includes(b.original))) ||
+                  (b.improved && corrStr && b.improved.includes(corrStr))
+              );
+              if (!alreadyExists && textStr && corrStr) {
+                parsed.studentFeedback.betterExpressions.push({
+                  original: textStr,
+                  improved: corrStr,
+                  reason: err.reason || '보다 자연스러운 단어 및 표현 선택 제안 (감점 없음)',
+                });
+              }
+            }
+          } else {
+            // 중대한 문법/구문 오류만 감점 카운트에 포함
+            err.isDeducted = true;
+            deductionErrorCount++;
+          }
+        });
+
+        parsed.languageAnalysis.errors = allErrors;
+        parsed.languageAnalysis.errorCount = deductionErrorCount;
+
+        let deduction = 0;
+        if (deductionErrorCount >= 6) {
+          deduction = 2;
+        } else if (deductionErrorCount >= 3) {
+          deduction = 1;
+        } else {
+          deduction = 0;
+        }
+        parsed.languageAnalysis.deduction = deduction;
+
+        // Base score: 2개 다 쓰면 4점, 1개 쓰면 3점, 썼으나 이상하게 썼으면 2점, 미작성 1점
+        const participleUsed = Boolean(parsed.languageAnalysis.participleUsed);
+        const becauseUsed = Boolean(parsed.languageAnalysis.becauseUsed);
+        let baseScore = 1;
+        if (participleUsed && becauseUsed) {
+          baseScore = 4;
+        } else if (participleUsed || becauseUsed) {
+          baseScore = 3;
+        } else {
+          const hasAttempt = rawText.length > 20 && !rawText.includes('백지 제출');
+          baseScore = hasAttempt ? 2 : 1;
+        }
+        parsed.languageAnalysis.baseScore = baseScore;
+
+        scores.languageScore = Math.max(1, Math.min(4, baseScore - deduction));
+        parsed.languageAnalysis.finalLanguageScore = scores.languageScore;
+
+        // Clean any leaked rubric criteria text from student feedback
+        if (parsed.studentFeedback) {
+          const cleanText = (str: string) => {
+            if (!str) return str;
+            return str
+              .replace(/\[채점\s*기준\][^\n.]*/g, '')
+              .replace(/\(2점\)/g, '')
+              .replace(/\(4점\)/g, '')
+              .replace(/\(기본\s*\d점\)/g, '')
+              .replace(/\d점\s*감점/g, '')
+              .trim();
+          };
+          if (parsed.studentFeedback.goodPoints) {
+            parsed.studentFeedback.goodPoints = cleanText(parsed.studentFeedback.goodPoints);
+          }
+          if (parsed.studentFeedback.nextStep) {
+            parsed.studentFeedback.nextStep = cleanText(parsed.studentFeedback.nextStep);
+          }
+        }
+      } else {
+        scores.languageScore = 1;
+      }
+
+      if (parsed.sentenceCounts) {
+        const b1 = parsed.sentenceCounts.body1SentenceCount;
+        if (typeof b1 === 'number') {
+          scores.body1Score = b1 >= 3 ? 4 : b1 === 2 ? 3 : b1 === 1 ? 2 : 1;
+        }
+        const b2 = parsed.sentenceCounts.body2SentenceCount;
+        if (typeof b2 === 'number') {
+          scores.body2Score = b2 >= 3 ? 4 : b2 === 2 ? 3 : b2 === 1 ? 2 : 1;
+        }
+      }
+
+      if (typeof parsed.wordCount === 'number') {
+        const wc = parsed.wordCount;
+        scores.wordCountScore = wc >= 80 ? 4 : wc >= 60 ? 3 : wc >= 1 ? 2 : 1;
+      }
+
+      scores.totalScore =
+        (scores.body1Score || 1) +
+        (scores.body2Score || 1) +
+        (scores.languageScore || 1) +
+        (scores.wordCountScore || 1);
+      parsed.scores = scores;
+    }
 
     return res.status(200).json({ success: true, data: parsed });
   } catch (error: any) {

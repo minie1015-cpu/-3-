@@ -52,10 +52,14 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
   const [batchQueue, setBatchQueue] = useState<BatchFileItem[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState<boolean>(false);
   const [currentBatchIndex, setCurrentBatchIndex] = useState<number>(0);
-  const [batchCompletedCount, setBatchCompletedCount] = useState<number>(0);
-  const [batchErrorCount, setBatchErrorCount] = useState<number>(0);
   const [batchStatusMessage, setBatchStatusMessage] = useState<string>('');
   const [batchSummaryRecordList, setBatchSummaryRecordList] = useState<EvaluationRecord[]>([]);
+
+  // Reactive derived counts for queue items
+  const completedBatchCount = batchQueue.filter((i) => i.status === 'success').length;
+  const pendingBatchCount = batchQueue.filter((i) => i.status === 'idle').length;
+  const errorBatchCount = batchQueue.filter((i) => i.status === 'error').length;
+  const unEvaluatedBatchCount = batchQueue.filter((i) => i.status !== 'success').length;
 
   // Multi-page PDF splitting progress states
   const [isSplittingPdf, setIsSplittingPdf] = useState<boolean>(false);
@@ -195,7 +199,6 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
         const combined = [...prev, ...newItems];
         return combined.slice(0, 50); // Supports up to 50 students
       });
-      setBatchSummaryRecordList([]);
 
       if (splitCount > 0) {
         setBatchStatusMessage(
@@ -219,8 +222,6 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
   const handleClearBatchQueue = () => {
     if (isBatchProcessing) return;
     setBatchQueue([]);
-    setBatchCompletedCount(0);
-    setBatchErrorCount(0);
     setBatchSummaryRecordList([]);
     setBatchStatusMessage('');
   };
@@ -238,39 +239,50 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
     });
   };
 
-  // Run Batch Evaluation
-  const handleStartBatchEvaluation = async () => {
+  // Run Batch Evaluation (By default evaluates only pending/error items to support time-lagged uploads)
+  const handleStartBatchEvaluation = async (options?: { reevaluateAll?: boolean }) => {
     if (batchQueue.length === 0) return;
+
+    const reevaluateAll = options?.reevaluateAll ?? false;
+    const targetItems = reevaluateAll
+      ? batchQueue
+      : batchQueue.filter((item) => item.status !== 'success');
+
+    if (targetItems.length === 0) {
+      setBatchStatusMessage('채점 대기 중인 답안지가 없습니다. (모든 답안지가 이미 채점 완료되었습니다)');
+      return;
+    }
 
     setIsBatchProcessing(true);
     abortBatchRef.current = false;
     setCurrentBatchIndex(0);
-    setBatchCompletedCount(0);
-    setBatchErrorCount(0);
-    setBatchSummaryRecordList([]);
-    setBatchStatusMessage(`총 ${batchQueue.length}명 답안지 일괄 채점 준비 중...`);
+    setBatchStatusMessage(
+      reevaluateAll
+        ? `대기열의 모든 답안지(${targetItems.length}명) 전체 재채점 준비 중...`
+        : `미채점 답안지 ${targetItems.length}명 일괄 채점 시작... (이미 채점 완료된 답안지는 보존)`
+    );
 
     const evaluatedRecords: EvaluationRecord[] = [];
 
-    for (let i = 0; i < batchQueue.length; i++) {
+    for (let i = 0; i < targetItems.length; i++) {
       if (abortBatchRef.current) {
         setBatchStatusMessage('교사에 의해 일괄 채점이 중단되었습니다.');
         break;
       }
 
       setCurrentBatchIndex(i + 1);
-      const currentItem = batchQueue[i];
+      const currentItem = targetItems[i];
 
       // Update item state to 'processing'
       setBatchQueue((prev) =>
-        prev.map((item, idx) =>
-          idx === i ? { ...item, status: 'processing' } : item
+        prev.map((item) =>
+          item.id === currentItem.id ? { ...item, status: 'processing', errorMessage: undefined } : item
         )
       );
 
       const studentNameDisplay = currentItem.studentInfo?.name || currentItem.fileName;
       setBatchStatusMessage(
-        `[${i + 1}/${batchQueue.length}] ${studentNameDisplay} 학생 답안지 분석 및 16점 루브릭 채점 중...`
+        `[${i + 1}/${targetItems.length}] ${studentNameDisplay} 학생 답안지 분석 및 16점 루브릭 채점 중...`
       );
 
       try {
@@ -291,15 +303,19 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
           }),
         });
 
-    const json = await response.json();
+        const json = await response.json();
 
-    if (!response.ok || !json.success) {
-      const errMsg = typeof json.error === 'object' ? (json.error.message || JSON.stringify(json.error)) : (json.error || '채점 평가 오류');
-      throw new Error(errMsg);
-    }
+        if (!response.ok || !json.success) {
+          const errMsg =
+            typeof json.error === 'object'
+              ? json.error.message || JSON.stringify(json.error)
+              : json.error || '채점 평가 오류';
+          throw new Error(errMsg);
+        }
+
         const resData = json.data;
         const newRecord: EvaluationRecord = {
-          id: `batch-${Date.now()}-${i}`,
+          id: currentItem.result?.id || `eval-${currentItem.id}`,
           studentInfo: resData.studentInfo || {
             grade: currentItem.studentInfo?.grade || '3',
             classNum: currentItem.studentInfo?.classNum || '1',
@@ -331,8 +347,8 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
 
         // Update item state to 'success'
         setBatchQueue((prev) =>
-          prev.map((item, idx) =>
-            idx === i
+          prev.map((item) =>
+            item.id === currentItem.id
               ? {
                   ...item,
                   status: 'success',
@@ -343,17 +359,22 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
           )
         );
 
-        setBatchCompletedCount((c) => c + 1);
-        setBatchSummaryRecordList((prev) => [...prev, newRecord]);
+        // Immediate reflection in global records
+        onAddEvaluation(newRecord);
+
+        setBatchSummaryRecordList((prev) => {
+          const idx = prev.findIndex((r) => r.id === newRecord.id);
+          if (idx >= 0) return prev.map((r) => (r.id === newRecord.id ? newRecord : r));
+          return [...prev, newRecord];
+        });
 
         // Add small pause between requests to prevent API rate limit issues
         await new Promise((r) => setTimeout(r, 600));
       } catch (err: any) {
-        console.error(`Batch item ${i} failed:`, err);
-        setBatchErrorCount((e) => e + 1);
+        console.error(`Batch item ${currentItem.id} failed:`, err);
         setBatchQueue((prev) =>
-          prev.map((item, idx) =>
-            idx === i
+          prev.map((item) =>
+            item.id === currentItem.id
               ? {
                   ...item,
                   status: 'error',
@@ -369,12 +390,122 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
     if (evaluatedRecords.length > 0) {
       if (onAddBatchEvaluations) {
         onAddBatchEvaluations(evaluatedRecords);
-      } else {
-        evaluatedRecords.forEach((r) => onAddEvaluation(r));
       }
       setBatchStatusMessage(
-        `✓ 일괄 채점 완료! 총 ${evaluatedRecords.length}명의 채점 기록이 교사용 성적 시트에 자동 반영되었습니다.`
+        `✓ 채점 완료! 총 ${evaluatedRecords.length}명의 답안지 채점이 완료되어 교사용 성적 시트에 반영되었습니다.`
       );
+    }
+  };
+
+  // Evaluate a Single Item Independently
+  const handleEvaluateSingleItem = async (itemId: string) => {
+    const targetItem = batchQueue.find((it) => it.id === itemId);
+    if (!targetItem || isBatchProcessing || targetItem.status === 'processing') return;
+
+    // Mark as processing
+    setBatchQueue((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, status: 'processing', errorMessage: undefined } : it))
+    );
+
+    const studentNameDisplay = targetItem.studentInfo?.name || targetItem.fileName;
+    setBatchStatusMessage(`[개별 채점] ${studentNameDisplay} 학생 답안지 AI 16점 루브릭 채점 중...`);
+
+    try {
+      let base64 = targetItem.fileBase64;
+      if (!base64 && targetItem.file) {
+        base64 = await readFileAsBase64(targetItem.file);
+      }
+
+      const response = await fetch('/api/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: base64,
+          mimeType: targetItem.fileMimeType || 'image/jpeg',
+          studentText: targetItem.studentText,
+          studentInfo: targetItem.studentInfo,
+        }),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok || !json.success) {
+        const errMsg =
+          typeof json.error === 'object'
+            ? json.error.message || JSON.stringify(json.error)
+            : json.error || '채점 평가 오류';
+        throw new Error(errMsg);
+      }
+
+      const resData = json.data;
+      const newRecord: EvaluationRecord = {
+        id: targetItem.result?.id || `eval-${targetItem.id}`,
+        studentInfo: resData.studentInfo || {
+          grade: targetItem.studentInfo?.grade || '3',
+          classNum: targetItem.studentInfo?.classNum || '1',
+          studentNum: targetItem.studentInfo?.studentNum || '1',
+          name: targetItem.studentInfo?.name || targetItem.fileName,
+        },
+        scores: resData.scores,
+        extractedText: resData.extractedText || '',
+        wordCount: resData.wordCount || 0,
+        sentenceCounts: resData.sentenceCounts,
+        languageAnalysis: resData.languageAnalysis,
+        rubricNotes: resData.rubricNotes || {
+          body1Note: '',
+          body2Note: '',
+          languageNote: '',
+          wordCountNote: '',
+        },
+        teacherMemo: resData.teacherMemo || '',
+        neisNote: resData.neisNote || '',
+        studentFeedback: resData.studentFeedback,
+        analyzedAt: new Date().toLocaleTimeString('ko-KR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        sourceType: 'image',
+      };
+
+      setBatchQueue((prev) =>
+        prev.map((it) =>
+          it.id === itemId
+            ? {
+                ...it,
+                status: 'success',
+                result: newRecord,
+                studentInfo: newRecord.studentInfo,
+              }
+            : it
+        )
+      );
+
+      // Save to global list in App.tsx
+      onAddEvaluation(newRecord);
+
+      setBatchSummaryRecordList((prev) => {
+        const idx = prev.findIndex((r) => r.id === newRecord.id);
+        if (idx >= 0) return prev.map((r) => (r.id === newRecord.id ? newRecord : r));
+        return [...prev, newRecord];
+      });
+
+      setBatchStatusMessage(
+        `✓ [${newRecord.studentInfo.name}] 학생 답안지 개별 채점 완료! (총점: ${newRecord.scores.totalScore}점)`
+      );
+    } catch (err: any) {
+      console.error(`Single evaluation failed for ${itemId}:`, err);
+      setBatchQueue((prev) =>
+        prev.map((it) =>
+          it.id === itemId
+            ? {
+                ...it,
+                status: 'error',
+                errorMessage: err?.message || '개별 채점 실패',
+              }
+            : it
+        )
+      );
+      setBatchStatusMessage(`✕ [${studentNameDisplay}] 개별 채점 실패: ${err?.message || '오류'}`);
     }
   };
 
@@ -397,45 +528,50 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
     }));
 
     setBatchQueue(sampleQueueItems);
-    setBatchCompletedCount(0);
-    setBatchErrorCount(0);
     setBatchSummaryRecordList([]);
     setBatchStatusMessage(
-      `학급 28명 스캔본 묶음 데이터가 대기열에 등록되었습니다. '일괄 채점 실행'을 누르면 16점 루브릭으로 즉시 채점됩니다.`
+      `학급 28명 스캔본 묶음 데이터가 대기열에 등록되었습니다. '미채점 일괄 채점'을 누르거나 학생별 '개별 채점'을 누르세요.`
     );
   };
 
   // Instant simulate execution of the 28-student batch
-  const handleInstantSimulateBatch = async () => {
+  const handleInstantSimulateBatch = async (options?: { reevaluateAll?: boolean }) => {
     if (isBatchProcessing || batchQueue.length === 0) return;
+
+    const reevaluateAll = options?.reevaluateAll ?? false;
+    const targetItems = reevaluateAll
+      ? batchQueue
+      : batchQueue.filter((it) => it.status !== 'success');
+
+    if (targetItems.length === 0) {
+      setBatchStatusMessage('채점 대기 중인 답안지가 없습니다.');
+      return;
+    }
 
     setIsBatchProcessing(true);
     abortBatchRef.current = false;
     setCurrentBatchIndex(0);
-    setBatchCompletedCount(0);
-    setBatchErrorCount(0);
-    setBatchSummaryRecordList([]);
 
     const evaluatedRecords: EvaluationRecord[] = [];
 
-    for (let i = 0; i < batchQueue.length; i++) {
+    for (let i = 0; i < targetItems.length; i++) {
       if (abortBatchRef.current) break;
 
       setCurrentBatchIndex(i + 1);
-      const item = batchQueue[i];
+      const item = targetItems[i];
 
       setBatchQueue((prev) =>
-        prev.map((it, idx) => (idx === i ? { ...it, status: 'processing' } : it))
+        prev.map((it) => (it.id === item.id ? { ...it, status: 'processing' } : it))
       );
       setBatchStatusMessage(
-        `[${i + 1}/${batchQueue.length}] ${item.studentInfo?.name || item.fileName} 학생 답안 채점 분석 중...`
+        `[${i + 1}/${targetItems.length}] ${item.studentInfo?.name || item.fileName} 학생 답안 채점 분석 중...`
       );
 
       // Simulation delay per item for realistic visual feedback
-      await new Promise((r) => setTimeout(r, 120));
+      await new Promise((r) => setTimeout(r, 100));
 
-      const record = item.result || {
-        id: `batch-${Date.now()}-${i}`,
+      const record: EvaluationRecord = item.result || {
+        id: `eval-${item.id}`,
         studentInfo: {
           grade: item.studentInfo?.grade || '3',
           classNum: item.studentInfo?.classNum || '1',
@@ -483,23 +619,27 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
       evaluatedRecords.push(record);
 
       setBatchQueue((prev) =>
-        prev.map((it, idx) =>
-          idx === i ? { ...it, status: 'success', result: record } : it
+        prev.map((it) =>
+          it.id === item.id ? { ...it, status: 'success', result: record, studentInfo: record.studentInfo } : it
         )
       );
-      setBatchCompletedCount((c) => c + 1);
-      setBatchSummaryRecordList((prev) => [...prev, record]);
+      setBatchSummaryRecordList((prev) => {
+        const idx = prev.findIndex((r) => r.id === record.id);
+        if (idx >= 0) return prev.map((r) => (r.id === record.id ? record : r));
+        return [...prev, record];
+      });
+      onAddEvaluation(record);
     }
 
     setIsBatchProcessing(false);
-    if (onAddBatchEvaluations) {
-      onAddBatchEvaluations(evaluatedRecords);
-    } else {
-      evaluatedRecords.forEach((r) => onAddEvaluation(r));
+    if (evaluatedRecords.length > 0) {
+      if (onAddBatchEvaluations) {
+        onAddBatchEvaluations(evaluatedRecords);
+      }
+      setBatchStatusMessage(
+        `✓ 총 ${evaluatedRecords.length}명 채점 완료! 교사용 성적 시트와 학생 피드백지에서 확인 가능합니다.`
+      );
     }
-    setBatchStatusMessage(
-      `✓ 총 ${evaluatedRecords.length}명 일괄 채점 완료! 교사용 성적 시트와 학생 피드백지에서 전원 확인 가능합니다.`
-    );
   };
 
   // ==========================================
@@ -806,7 +946,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
             </div>
 
             {/* Batch Progress Bar (Visible during or after processing) */}
-            {(isBatchProcessing || batchCompletedCount > 0) && (
+            {(isBatchProcessing || completedBatchCount > 0) && (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-800 flex items-center space-x-1.5">
@@ -814,7 +954,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                     <span>일괄 채점 진행 현황</span>
                   </span>
                   <span className="font-mono text-indigo-700 font-bold">
-                    {batchCompletedCount} / {batchQueue.length}명 완료 ({batchQueue.length > 0 ? Math.round((batchCompletedCount / batchQueue.length) * 100) : 0}%)
+                    {completedBatchCount} / {batchQueue.length}명 완료 ({batchQueue.length > 0 ? Math.round((completedBatchCount / batchQueue.length) * 100) : 0}%)
                   </span>
                 </div>
 
@@ -823,7 +963,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                   <div
                     className="bg-indigo-600 h-full transition-all duration-300 rounded-full"
                     style={{
-                      width: `${batchQueue.length > 0 ? (batchCompletedCount / batchQueue.length) * 100 : 0}%`,
+                      width: `${batchQueue.length > 0 ? (completedBatchCount / batchQueue.length) * 100 : 0}%`,
                     }}
                   />
                 </div>
@@ -838,59 +978,110 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
 
             {/* Action Buttons Bar */}
             {batchQueue.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handleClearBatchQueue}
-                    disabled={isBatchProcessing}
-                    className="px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg transition disabled:opacity-50"
-                  >
-                    대기열 전체 비우기
-                  </button>
-                  {isBatchProcessing && (
-                    <button
-                      onClick={() => {
-                        abortBatchRef.current = true;
-                      }}
-                      className="px-3 py-2 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition"
-                    >
-                      채점 중단
-                    </button>
-                  )}
+              <div className="space-y-3 pt-2">
+                {/* Time-lagged Upload & Selective Grading Guidance Banner */}
+                <div className="bg-gradient-to-r from-indigo-50/80 to-blue-50/80 border border-indigo-100 rounded-xl p-3.5 text-xs text-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-start space-x-2.5">
+                    <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-slate-900">시차 채점 및 학생별 개별 채점 지원</p>
+                      <p className="text-slate-600 text-[11px] mt-0.5 leading-relaxed">
+                        답안지를 시차를 두고 순차 업로드하셔도 <strong>이미 채점된 학생은 보존</strong>되며, 새로 들어온 파일만 <strong>[미채점 일괄 채점]</strong>하거나 각 행의 <strong>[개별 채점]</strong> 버튼으로 즉시 채점할 수 있습니다.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-1.5 shrink-0 self-start sm:self-center">
+                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100/70 text-emerald-800 border border-emerald-300">
+                      완료 {completedBatchCount}명
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-100/70 text-indigo-800 border border-indigo-300">
+                      대기 {pendingBatchCount}명
+                    </span>
+                    {errorBatchCount > 0 && (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-100/70 text-rose-800 border border-rose-300">
+                        오류 {errorBatchCount}명
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center space-x-2 w-full sm:w-auto">
-                  {/* If sample files loaded, offer fast simulation */}
-                  {batchQueue.some((i) => i.id.startsWith('sample-batch')) && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex items-center space-x-2">
                     <button
-                      id="run-fast-simulate-batch-btn"
+                      onClick={handleClearBatchQueue}
                       disabled={isBatchProcessing}
-                      onClick={handleInstantSimulateBatch}
-                      className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-xs disabled:opacity-50"
+                      className="px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg transition disabled:opacity-50 cursor-pointer"
                     >
-                      <Sparkles className="w-4 h-4 text-emerald-200" />
-                      <span>테스트 학급 고속 일괄 채점 ({batchQueue.length}명)</span>
+                      대기열 전체 비우기
                     </button>
-                  )}
-
-                  <button
-                    id="run-batch-evaluation-btn"
-                    disabled={isBatchProcessing || batchQueue.length === 0}
-                    onClick={handleStartBatchEvaluation}
-                    className="flex-1 sm:flex-none px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-2 shadow-xs disabled:opacity-50"
-                  >
-                    {isBatchProcessing ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>채점 진행 중 ({currentBatchIndex}/{batchQueue.length})...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 h-4 fill-white" />
-                        <span>16점 루브릭 일괄 채점 시작 ({batchQueue.length}명)</span>
-                      </>
+                    {isBatchProcessing && (
+                      <button
+                        onClick={() => {
+                          abortBatchRef.current = true;
+                        }}
+                        className="px-3 py-2 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition cursor-pointer"
+                      >
+                        채점 중단
+                      </button>
                     )}
-                  </button>
+                  </div>
+
+                  <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto justify-end">
+                    {/* If sample files loaded, offer fast simulation */}
+                    {batchQueue.some((i) => i.id.startsWith('sample-batch')) && (
+                      <button
+                        id="run-fast-simulate-batch-btn"
+                        disabled={isBatchProcessing}
+                        onClick={() => handleInstantSimulateBatch({ reevaluateAll: false })}
+                        className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4 text-emerald-200" />
+                        <span>테스트 학급 고속 일괄 채점</span>
+                      </button>
+                    )}
+
+                    {/* Re-evaluate all option if some were already completed */}
+                    {completedBatchCount > 0 && (
+                      <button
+                        disabled={isBatchProcessing}
+                        onClick={() => {
+                          handleStartBatchEvaluation({ reevaluateAll: true });
+                        }}
+                        className="px-3.5 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center space-x-1.5 shadow-2xs disabled:opacity-50 cursor-pointer"
+                        title="이미 완료된 답안지를 포함해 대기열 전체를 다시 채점합니다"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                        <span>전체 재채점 ({batchQueue.length}명)</span>
+                      </button>
+                    )}
+
+                    {/* Primary Batch Evaluation Button: Only evaluates un-evaluated items */}
+                    {unEvaluatedBatchCount > 0 ? (
+                      <button
+                        id="run-batch-evaluation-btn"
+                        disabled={isBatchProcessing}
+                        onClick={() => handleStartBatchEvaluation({ reevaluateAll: false })}
+                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-2 shadow-xs disabled:opacity-50 cursor-pointer"
+                      >
+                        {isBatchProcessing ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>채점 진행 중 ({currentBatchIndex}/{unEvaluatedBatchCount})...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 fill-white" />
+                            <span>미채점 답안지 일괄 채점 ({unEvaluatedBatchCount}명)</span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <div className="px-4 py-2.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-2xs">
+                        <CheckCircle className="w-4 h-4 text-emerald-600" />
+                        <span>대기열 전원 채점 완료 ({batchQueue.length}명)</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -905,7 +1096,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                   <span>업로드 대기열 및 채점 상태 ({batchQueue.length}명)</span>
                 </h3>
                 <span className="text-xs text-slate-500">
-                  완료: <strong className="text-emerald-600">{batchCompletedCount}</strong>건 / 오류: <strong className="text-rose-600">{batchErrorCount}</strong>건
+                  완료: <strong className="text-emerald-600">{completedBatchCount}</strong>건 / 오류: <strong className="text-rose-600">{errorBatchCount}</strong>건 / 대기: <strong className="text-indigo-600">{pendingBatchCount}</strong>건
                 </span>
               </div>
 
@@ -919,7 +1110,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                       <th className="py-2.5 px-4">채점 상태</th>
                       <th className="py-2.5 px-4 text-center">총점 (16점 만점)</th>
                       <th className="py-2.5 px-4 text-center">단어 수</th>
-                      <th className="py-2.5 px-4 text-center">관리</th>
+                      <th className="py-2.5 px-4 text-center w-56">채점 실행 / 관리</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -967,7 +1158,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                             {isProcessing && (
                               <span className="inline-flex items-center space-x-1 text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
                                 <RefreshCw className="w-3 h-3 animate-spin" />
-                                <span>OCR 및 채점 중...</span>
+                                <span>채점 분석 중...</span>
                               </span>
                             )}
                             {isSuccess && (
@@ -983,7 +1174,9 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                               </span>
                             )}
                             {item.status === 'idle' && (
-                              <span className="text-slate-400">대기 중</span>
+                              <span className="inline-flex items-center space-x-1 text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[11px] font-medium">
+                                <span>채점 대기</span>
+                              </span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-center">
@@ -999,25 +1192,83 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                             {item.result ? `${item.result.wordCount}단어` : '-'}
                           </td>
                           <td className="py-3 px-4 text-center">
-                            {item.result ? (
-                              <button
-                                onClick={() => {
-                                  onSelectStudentForPrint(item.result!.id);
-                                  onNavigateToTab('student');
-                                }}
-                                className="text-indigo-600 hover:text-indigo-800 font-semibold hover:underline"
-                              >
-                                피드백지 보기
-                              </button>
+                            {isProcessing ? (
+                              <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 text-indigo-700 font-semibold bg-indigo-50 border border-indigo-200 rounded-lg text-xs">
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                <span>채점 중...</span>
+                              </div>
+                            ) : isSuccess ? (
+                              <div className="flex items-center justify-center space-x-1.5">
+                                <button
+                                  onClick={() => {
+                                    onSelectStudentForPrint(item.result!.id);
+                                    onNavigateToTab('student');
+                                  }}
+                                  className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-bold text-xs shadow-2xs transition flex items-center space-x-1 cursor-pointer"
+                                  title="학생 피드백지 보기"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span>피드백지</span>
+                                </button>
+                                <button
+                                  onClick={() => handleEvaluateSingleItem(item.id)}
+                                  disabled={isBatchProcessing}
+                                  className="px-2 py-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg text-xs font-medium transition flex items-center space-x-1 disabled:opacity-50 cursor-pointer"
+                                  title="이 답안지만 다시 채점"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                  <span>재채점</span>
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveFromQueue(item.id)}
+                                  disabled={isBatchProcessing}
+                                  className="text-slate-300 hover:text-rose-600 p-1.5 rounded hover:bg-slate-100 transition disabled:opacity-50 cursor-pointer"
+                                  title="대기열에서 제거"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : isError ? (
+                              <div className="flex items-center justify-center space-x-1.5">
+                                <button
+                                  onClick={() => handleEvaluateSingleItem(item.id)}
+                                  disabled={isBatchProcessing}
+                                  className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-lg text-xs transition flex items-center space-x-1 disabled:opacity-50 cursor-pointer"
+                                  title="채점 재시도"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                  <span>재시도</span>
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveFromQueue(item.id)}
+                                  disabled={isBatchProcessing}
+                                  className="text-slate-400 hover:text-rose-600 p-1.5 rounded hover:bg-slate-100 transition disabled:opacity-50 cursor-pointer"
+                                  title="대기열에서 제거"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             ) : (
-                              <button
-                                onClick={() => handleRemoveFromQueue(item.id)}
-                                disabled={isBatchProcessing}
-                                className="text-slate-400 hover:text-rose-600 p-1 rounded"
-                                title="대기열에서 제거"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              /* status === 'idle' (채점 대기 상태) */
+                              <div className="flex items-center justify-center space-x-1.5">
+                                <button
+                                  onClick={() => handleEvaluateSingleItem(item.id)}
+                                  disabled={isBatchProcessing}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
+                                  title="이 답안지만 즉시 개별 채점"
+                                >
+                                  <Play className="w-3 h-3 fill-white" />
+                                  <span>개별 채점</span>
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveFromQueue(item.id)}
+                                  disabled={isBatchProcessing}
+                                  className="text-slate-400 hover:text-rose-600 p-1.5 rounded hover:bg-slate-100 transition disabled:opacity-50 cursor-pointer"
+                                  title="대기열에서 제거"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -1482,9 +1733,24 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                             )}
                           </div>
                         ) : (
-                          <p className="text-[11px] text-slate-600 pl-1 mt-0.5">
-                            ✓ 주요 문법/어휘 오류 2개 이하로 감점 없이 기본 점수를 획득하였습니다. (대소문자는 감점 대상 제외)
-                          </p>
+                          (() => {
+                            const isBlank =
+                              lastSingleResult.wordCount === 0 ||
+                              lastSingleResult.scores.totalScore === 4 ||
+                              (lastSingleResult.extractedText && lastSingleResult.extractedText.includes('백지'));
+                            if (isBlank) {
+                              return (
+                                <p className="text-[11px] text-slate-600 pl-1 mt-0.5">
+                                  ※ 본문 미작성(백지 제출)으로 분석된 어법 문장이 없습니다. (기본점 1점)
+                                </p>
+                              );
+                            }
+                            return (
+                              <p className="text-[11px] text-slate-600 pl-1 mt-0.5">
+                                ✓ 주요 문법/어휘 오류 2개 이하로 감점 없이 기본 점수를 획득하였습니다. (대소문자는 감점 대상 제외)
+                              </p>
+                            );
+                          })()
                         )}
                       </div>
 

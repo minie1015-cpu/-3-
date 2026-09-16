@@ -173,7 +173,7 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
         <div className="flex items-center space-x-2">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>
-            <strong>학생 개인정보 보호 및 언어형식 피드백:</strong> 교사는 상단에서 학생 이름을 확인하여 관리할 수 있으며, 학생용 개별 피드백지에는 이름이 나오지 않고 <strong>반·번호({currentRecord.studentInfo.grade}학년 {currentRecord.studentInfo.classNum}반 {currentRecord.studentInfo.studentNum}번)만 표기</strong>됩니다. 또한 언어형식에서 <strong>어떤 부분이 틀려서 몇 점 감점</strong>되었는지 상세히 안내됩니다.
+            <strong>학생 개인정보 보호 및 성장 중심 피드백:</strong> 교사는 상단에서 학생 이름을 확인하여 관리할 수 있으며, 학생용 개별 피드백지에는 이름이 나오지 않고 <strong>반·번호({currentRecord.studentInfo.grade}학년 {currentRecord.studentInfo.classNum}반 {currentRecord.studentInfo.studentNum}번)만 표기</strong>됩니다. 또한 배움 중심 피드백을 위해 <strong>점수/감점 기준 대신 따뜻한 어법·어휘 추천 가이드</strong>가 제공됩니다.
           </span>
         </div>
         <span className="text-[11px] font-mono text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded">
@@ -299,40 +299,42 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
               </div>
             </div>
 
-            {/* 3. 언어형식 오류 분석 및 감점 안내 (선생님 지정 루브릭 반영) */}
+            {/* 3. 언어형식 맞춤 배움 가이드 (학생 친화적 피드백 제공) */}
             <div className="mb-3.5">
               <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center justify-between">
                 <div className="flex items-center space-x-1.5">
                   <span className="text-slate-800">■</span>
-                  <span>언어형식 평가 및 감점 세부 안내</span>
+                  <span>언어형식 맞춤 배움 가이드</span>
                 </div>
                 <div className="text-[11px] font-bold text-slate-600">
-                  {student.languageAnalysis ? (
-                    student.languageAnalysis.deduction > 0 ? (
-                      <span className="text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded font-bold">
-                        기본 4점 중 어법 오류 {student.languageAnalysis.errorCount}개 검출 → {student.languageAnalysis.deduction}점 감점 (최종 {student.languageAnalysis.finalLanguageScore}점)
+                  {(() => {
+                    const isBlank =
+                      student.wordCount === 0 ||
+                      student.scores.totalScore === 4 ||
+                      (student.extractedText && student.extractedText.includes('백지'));
+
+                    if (isBlank) {
+                      return (
+                        <span className="text-slate-700 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded font-bold">
+                          본문 미작성 (백지 제출)
+                        </span>
+                      );
+                    }
+
+                    return (
+                      <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-bold">
+                        성장 중심 피드백 (대소문자·단어선택 감점 없음)
                       </span>
-                    ) : (
-                      <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-bold">
-                        어법 오류 2개 이하 (감점 없음 · 4점 만점)
-                      </span>
-                    )
-                  ) : (
-                    <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-bold">
-                      언어형식: {student.scores.languageScore}/4점
-                    </span>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
 
               <div className="bg-amber-50/40 border border-amber-200 rounded-xl p-3 text-xs space-y-2 text-slate-800">
-                {/* Rule summary */}
-                <div className="text-[11px] text-slate-600 border-b border-amber-200/70 pb-1.5 flex flex-wrap items-center justify-between gap-1">
+                {/* Helpful guidance banner */}
+                <div className="text-[11px] text-indigo-900 bg-indigo-50/70 border border-indigo-200/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
                   <span>
-                    <strong>[채점 기준]</strong> 명사 수식 분사(2점) + 접속사 because(2점) 기본 4점 기준
-                  </span>
-                  <span className="text-slate-600 font-medium">
-                    * 감점 기준: <strong>대소문자는 감점 제외(피드백으로만 안내)</strong> / 감점오류 0~2개(0점), 3~5개(-1점), 6개 이상(-2점)
+                    💡 <strong>어법 및 단어 배움 팁:</strong> 문장의 첫 글자 대소문자나 더 자연스러운 단어 선택(예: hear music → listen to music)은 학생의 기를 살리고 배움을 돕기 위한 <strong>추천 제안</strong>이며 점수에 반영되지 않습니다.
                   </span>
                 </div>
 
@@ -340,22 +342,31 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
                 {student.languageAnalysis?.errors && student.languageAnalysis.errors.length > 0 ? (
                   <div className="space-y-1.5">
                     <div className="text-[11px] font-bold text-slate-800 flex items-center justify-between">
-                      <span className="text-rose-900">⚠️ 확인된 어법 교정 및 피드백 안내 목록:</span>
-                      <span className="text-[10px] text-slate-500 font-normal">
-                        (감점 대상 어법 오류: {student.languageAnalysis.errorCount}개 / 대소문자는 감점 대상 제외)
-                      </span>
+                      <span className="text-slate-800 font-bold">📝 확인된 맞춤 어법 및 단어 교정 목록:</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {student.languageAnalysis.errors.map((err, errIdx) => {
+                        const errTypeStr = String(err.errorType || '').toLowerCase();
                         const isCap =
-                          err.isDeducted === false ||
-                          (err.errorType && (err.errorType.includes('대소문자') || err.errorType.includes('capital')));
+                          errTypeStr.includes('대소문자') ||
+                          errTypeStr.includes('capital') ||
+                          errTypeStr.includes('case');
+                        const isWordChoice =
+                          errTypeStr.includes('단어') ||
+                          errTypeStr.includes('어휘') ||
+                          errTypeStr.includes('선택') ||
+                          errTypeStr.includes('word') ||
+                          errTypeStr.includes('diction') ||
+                          errTypeStr.includes('collocation');
+
                         return (
                           <div
                             key={errIdx}
                             className={`p-2 rounded-lg border text-[11px] space-y-0.5 shadow-2xs ${
                               isCap
                                 ? 'bg-sky-50/70 border-sky-200'
+                                : isWordChoice
+                                ? 'bg-emerald-50/70 border-emerald-200'
                                 : 'bg-white border-amber-200/90'
                             }`}
                           >
@@ -367,10 +378,16 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
                                 className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border ${
                                   isCap
                                     ? 'bg-sky-100 text-sky-800 border-sky-300'
+                                    : isWordChoice
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                     : 'bg-amber-100/70 text-amber-800 border-amber-200'
                                 }`}
                               >
-                                {isCap ? '대소문자 (감점제외 안내)' : err.errorType}
+                                {isCap
+                                  ? '대소문자 표기 안내'
+                                  : isWordChoice
+                                  ? '단어/어휘 선택 제안'
+                                  : '어법 교정 안내'}
                               </span>
                             </div>
                             <div className="text-indigo-900 font-bold">
@@ -382,9 +399,41 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="text-emerald-800 font-medium text-[11px] py-0.5">
-                    ✓ 명사 수식 분사 표현과 접속사 because를 어법에 맞게 잘 활용하였으며, 감점 대상 오류가 2개 이하로 우수합니다.
-                  </div>
+                  (() => {
+                    const isBlank =
+                      student.wordCount === 0 ||
+                      student.scores.totalScore === 4 ||
+                      (student.extractedText && student.extractedText.includes('백지'));
+
+                    if (isBlank) {
+                      return (
+                        <div className="text-slate-700 font-medium text-[11px] py-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5">
+                          ※ <strong>본문 미작성 (백지 제출):</strong> 작성된 본문이 없습니다. 다음 수행평가에서는 배운 표현을 한 문장이라도 꼭 작성해 보세요.
+                        </div>
+                      );
+                    }
+
+                    const bScore = student.languageAnalysis?.baseScore ?? 4;
+                    if (bScore >= 4) {
+                      return (
+                        <div className="text-emerald-800 font-medium text-[11px] py-0.5">
+                          ✓ 명사 수식 분사 표현과 접속사 because를 어법에 맞게 훌륭하게 활용하였습니다.
+                        </div>
+                      );
+                    } else if (bScore === 3) {
+                      return (
+                        <div className="text-blue-800 font-medium text-[11px] py-0.5">
+                          ✓ 배운 핵심 어법 요소를 활용하여 성실하게 영작문을 완성하였습니다.
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <div className="text-amber-800 font-medium text-[11px] py-0.5">
+                          ※ 명사 수식 분사 표현과 접속사 because를 한 번 더 복습하고 다음 글쓰기에 적용해 보세요.
+                        </div>
+                      );
+                    }
+                  })()
                 )}
               </div>
             </div>

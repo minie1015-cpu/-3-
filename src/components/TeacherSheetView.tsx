@@ -565,28 +565,40 @@ export const TeacherSheetView: React.FC<TeacherSheetViewProps> = ({
               </div>
               <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-xs space-y-2 text-slate-800">
                 <div className="text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1 border-b border-amber-200/80 pb-1.5">
-                  <span>기준: 분사(2점) + because(2점) 기본 4점</span>
-                  <span className="font-medium text-slate-700">감점 기준(대소문자 제외): 0~2개(0점), 3~5개(-1점), 6개 이상(-2점)</span>
+                  <span>기준: 분사·because 둘 다(4점) / 1개(3점) / 형태 시도(2점) / 미작성(1점)</span>
+                  <span className="font-medium text-slate-700">감점 기준: 0~2개(0점), 3~5개(-1점), 6개 이상(-2점)</span>
                 </div>
                 {selectedRecordForDetail.languageAnalysis?.errors && selectedRecordForDetail.languageAnalysis.errors.length > 0 ? (
                   <div className="space-y-1">
                     <div className="text-[11px] font-bold text-rose-800 flex items-center justify-between">
                       <span>감점 대상 어법 오류 {selectedRecordForDetail.languageAnalysis.errorCount}개 → {selectedRecordForDetail.languageAnalysis.deduction}점 감점 적용:</span>
-                      <span className="text-[10px] text-sky-700 font-normal">
-                        * 대소문자 오류는 감점 제외 (피드백 안내)
+                      <span className="text-[10px] text-indigo-700 font-normal">
+                        * 대소문자 표기 및 단어 선택은 감점 제외 (성장 피드백 안내)
                       </span>
                     </div>
                     <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
                       {selectedRecordForDetail.languageAnalysis.errors.map((err, idx) => {
+                        const errTypeStr = String(err.errorType || '').toLowerCase();
                         const isCap =
                           err.isDeducted === false ||
-                          (err.errorType && (err.errorType.includes('대소문자') || err.errorType.includes('capital')));
+                          errTypeStr.includes('대소문자') ||
+                          errTypeStr.includes('capital') ||
+                          errTypeStr.includes('case');
+                        const isWordChoice =
+                          errTypeStr.includes('단어') ||
+                          errTypeStr.includes('어휘') ||
+                          errTypeStr.includes('선택') ||
+                          errTypeStr.includes('word') ||
+                          errTypeStr.includes('collocation');
+
                         return (
                           <div
                             key={idx}
                             className={`p-2 rounded border text-[11px] flex items-center justify-between ${
                               isCap
                                 ? 'bg-sky-50/70 border-sky-200'
+                                : isWordChoice
+                                ? 'bg-emerald-50/70 border-emerald-200'
                                 : 'bg-white border-amber-200'
                             }`}
                           >
@@ -598,10 +610,16 @@ export const TeacherSheetView: React.FC<TeacherSheetViewProps> = ({
                               className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${
                                 isCap
                                   ? 'bg-sky-100 text-sky-800 border-sky-300'
+                                  : isWordChoice
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                   : 'bg-amber-100 text-amber-800 border-amber-200'
                               }`}
                             >
-                              {isCap ? '대소문자 (감점제외 안내)' : err.errorType}
+                              {isCap
+                                ? '대소문자 (감점제외)'
+                                : isWordChoice
+                                ? '단어선택 (Better Expression 제안)'
+                                : err.errorType}
                             </span>
                           </div>
                         );
@@ -610,7 +628,7 @@ export const TeacherSheetView: React.FC<TeacherSheetViewProps> = ({
                   </div>
                 ) : (
                   <div className="text-emerald-800 text-[11px]">
-                    ✓ 어법·철자 오류 2개 이하로 감점 없이 4점 만점 처리되었습니다. (대소문자 감점제외)
+                    ✓ 어법·철자 오류 2개 이하로 감점 없이 평가되었습니다. (대소문자 및 단어선택 감점 제외)
                   </div>
                 )}
               </div>

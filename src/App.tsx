@@ -17,18 +17,28 @@ export default function App() {
   const [isRubricModalOpen, setIsRubricModalOpen] = useState(false);
 
   // Add new evaluation record
+  // Add or update single evaluation record
   const handleAddEvaluation = (newRecord: EvaluationRecord) => {
-    setRecords((prev) => [newRecord, ...prev]);
+    setRecords((prev) => {
+      const idx = prev.findIndex((r) => r.id === newRecord.id);
+      if (idx >= 0) {
+        // Update existing record
+        return prev.map((r) => (r.id === newRecord.id ? newRecord : r));
+      }
+      return [newRecord, ...prev];
+    });
     setSelectedStudentId(newRecord.id);
   };
 
-  // Add multiple batch evaluation records (up to 30 students)
+  // Add multiple batch evaluation records (up to 50 students)
   const handleBatchAddEvaluations = (newRecords: EvaluationRecord[]) => {
     setRecords((prev) => {
-      // deduplicate by id
-      const existingIds = new Set(prev.map((r) => r.id));
-      const filteredNew = newRecords.filter((r) => !existingIds.has(r.id));
-      return [...filteredNew, ...prev];
+      const newMap = new Map(newRecords.map((r) => [r.id, r]));
+      // Update existing matches and keep non-conflicting old ones
+      const updatedExisting = prev.map((r) => (newMap.has(r.id) ? newMap.get(r.id)! : r));
+      const existingIdSet = new Set(prev.map((r) => r.id));
+      const trulyNew = newRecords.filter((r) => !existingIdSet.has(r.id));
+      return [...trulyNew, ...updatedExisting];
     });
     if (newRecords.length > 0) {
       setSelectedStudentId(newRecords[0].id);
