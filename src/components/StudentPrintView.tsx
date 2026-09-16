@@ -9,6 +9,7 @@ import {
   Download,
 } from 'lucide-react';
 import { EvaluationRecord } from '../types';
+import { cleanFeedbackText } from '../utils/sanitize';
 
 interface StudentPrintViewProps {
   records: EvaluationRecord[];
@@ -34,14 +35,14 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
     records.find((r) => r.id === selectedId) || records[0] || null;
 
   // Editable local state
-  const [goodPoints, setGoodPoints] = useState(currentRecord?.studentFeedback.goodPoints || '');
-  const [nextStep, setNextStep] = useState(currentRecord?.studentFeedback.nextStep || '');
+  const [goodPoints, setGoodPoints] = useState(cleanFeedbackText(currentRecord?.studentFeedback.goodPoints));
+  const [nextStep, setNextStep] = useState(cleanFeedbackText(currentRecord?.studentFeedback.nextStep));
 
   // Synchronize when currentRecord changes
   React.useEffect(() => {
     if (currentRecord) {
-      setGoodPoints(currentRecord.studentFeedback.goodPoints);
-      setNextStep(currentRecord.studentFeedback.nextStep);
+      setGoodPoints(cleanFeedbackText(currentRecord.studentFeedback.goodPoints));
+      setNextStep(cleanFeedbackText(currentRecord.studentFeedback.nextStep));
     }
   }, [currentRecord?.id]);
 
@@ -73,6 +74,10 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
 
   // Determine students to render for printing
   const studentsToRender = printScope === 'all' ? records : [currentRecord];
+
+  const sanitizeFeedback = (text?: string): string => {
+    return cleanFeedbackText(text);
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
@@ -173,7 +178,7 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
         <div className="flex items-center space-x-2">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>
-            <strong>학생 개인정보 보호 및 성장 중심 피드백:</strong> 교사는 상단에서 학생 이름을 확인하여 관리할 수 있으며, 학생용 개별 피드백지에는 이름이 나오지 않고 <strong>반·번호({currentRecord.studentInfo.grade}학년 {currentRecord.studentInfo.classNum}반 {currentRecord.studentInfo.studentNum}번)만 표기</strong>됩니다. 또한 배움 중심 피드백을 위해 <strong>점수/감점 기준 대신 따뜻한 어법·어휘 추천 가이드</strong>가 제공됩니다.
+            <strong>학생 개인정보 보호:</strong> 학생용 개별 피드백지에는 이름 대신 <strong>반·번호({currentRecord.studentInfo.grade}학년 {currentRecord.studentInfo.classNum}반 {currentRecord.studentInfo.studentNum}번)만 표기</strong>되어 배부할 수 있습니다.
           </span>
         </div>
         <span className="text-[11px] font-mono text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded">
@@ -230,7 +235,13 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
 
       {/* Printable Sheet Container - Exactly 1 A4 Page per Student */}
       <div id="printable-area" className="space-y-8 print:space-y-0">
-        {studentsToRender.map((student) => (
+        {studentsToRender.map((student) => {
+          const isBlank =
+            student.wordCount === 0 ||
+            student.scores.totalScore === 4 ||
+            (student.extractedText && (student.extractedText.includes('백지') || student.extractedText.includes('미작성')));
+
+          return (
           <div
             key={student.id}
             className="a4-feedback-sheet bg-white border-2 border-slate-800 rounded-2xl shadow-xs print:shadow-none print:border-2 print:border-black p-6 sm:p-7 transition-all max-w-3xl mx-auto print:max-w-none print:w-full print:rounded-none print:p-6 print:break-after-page"
@@ -299,47 +310,29 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
               </div>
             </div>
 
-            {/* 3. 언어형식 맞춤 배움 가이드 (학생 친화적 피드백 제공) */}
+            {/* 3. 언어형식 맞춤 배움 가이드 */}
             <div className="mb-3.5">
               <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center justify-between">
                 <div className="flex items-center space-x-1.5">
                   <span className="text-slate-800">■</span>
                   <span>언어형식 맞춤 배움 가이드</span>
                 </div>
-                <div className="text-[11px] font-bold text-slate-600">
-                  {(() => {
-                    const isBlank =
-                      student.wordCount === 0 ||
-                      student.scores.totalScore === 4 ||
-                      (student.extractedText && student.extractedText.includes('백지'));
-
-                    if (isBlank) {
-                      return (
-                        <span className="text-slate-700 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded font-bold">
-                          본문 미작성 (백지 제출)
-                        </span>
-                      );
-                    }
-
-                    return (
-                      <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-bold">
-                        성장 중심 피드백 (대소문자·단어선택 감점 없음)
-                      </span>
-                    );
-                  })()}
-                </div>
+                {isBlank && (
+                  <div className="text-[11px] font-bold text-slate-600">
+                    <span className="text-slate-700 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded font-bold">
+                      본문 미작성 (백지 제출)
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="bg-amber-50/40 border border-amber-200 rounded-xl p-3 text-xs space-y-2 text-slate-800">
-                {/* Helpful guidance banner */}
-                <div className="text-[11px] text-indigo-900 bg-indigo-50/70 border border-indigo-200/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-                  <span>
-                    💡 <strong>어법 및 단어 배움 팁:</strong> 문장의 첫 글자 대소문자나 더 자연스러운 단어 선택(예: hear music → listen to music)은 학생의 기를 살리고 배움을 돕기 위한 <strong>추천 제안</strong>이며 점수에 반영되지 않습니다.
-                  </span>
-                </div>
-
-                {/* Errors list */}
-                {student.languageAnalysis?.errors && student.languageAnalysis.errors.length > 0 ? (
+                {/* Blank submission handling: no error list */}
+                {isBlank ? (
+                  <div className="text-slate-700 font-medium text-[11px] py-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5">
+                    ※ <strong>본문 미작성 (백지 제출):</strong> 제출된 답안지에 작성된 본문이 없어 어법 분석을 진행하지 않았습니다.
+                  </div>
+                ) : student.languageAnalysis?.errors && student.languageAnalysis.errors.length > 0 ? (
                   <div className="space-y-1.5">
                     <div className="text-[11px] font-bold text-slate-800 flex items-center justify-between">
                       <span className="text-slate-800 font-bold">📝 확인된 맞춤 어법 및 단어 교정 목록:</span>
@@ -400,19 +393,6 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
                   </div>
                 ) : (
                   (() => {
-                    const isBlank =
-                      student.wordCount === 0 ||
-                      student.scores.totalScore === 4 ||
-                      (student.extractedText && student.extractedText.includes('백지'));
-
-                    if (isBlank) {
-                      return (
-                        <div className="text-slate-700 font-medium text-[11px] py-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5">
-                          ※ <strong>본문 미작성 (백지 제출):</strong> 작성된 본문이 없습니다. 다음 수행평가에서는 배운 표현을 한 문장이라도 꼭 작성해 보세요.
-                        </div>
-                      );
-                    }
-
                     const bScore = student.languageAnalysis?.baseScore ?? 4;
                     if (bScore >= 4) {
                       return (
@@ -445,37 +425,47 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
                 <span>잘한 점 (Good Points)</span>
               </div>
               <div className="bg-emerald-50/40 border border-emerald-200 rounded-xl p-3 text-xs sm:text-sm text-slate-800 leading-relaxed">
-                {student.studentFeedback.goodPoints}
+                {isBlank
+                  ? '답안지에 작성된 본문 내용이 없습니다 (백지 제출). 다음 수행평가에서는 배운 핵심 표현을 한 문장이라도 용기를 내어 작성해 보세요.'
+                  : sanitizeFeedback(student.studentFeedback.goodPoints)}
               </div>
             </div>
 
-            {/* 5. 더 나은 표현으로 다듬기 (Better Expressions) */}
-            <div className="mb-3.5">
-              <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center space-x-1.5">
-                <span className="text-slate-800">■</span>
-                <span>더 나은 표현으로 다듬기 (Better Expressions)</span>
-              </div>
-              <div className="space-y-1.5">
-                {student.studentFeedback.betterExpressions.map((item, bIdx) => (
-                  <div
-                    key={bIdx}
-                    className="bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs sm:text-sm space-y-1"
-                  >
-                    <div className="text-slate-600">
-                      <span className="font-bold text-slate-700">[원문]</span> {item.original}
-                    </div>
-                    <div className="text-indigo-900 font-bold">
-                      <span className="font-black text-indigo-700">→ [수정]</span> {item.improved}
-                    </div>
-                    {item.reason && (
-                      <div className="text-[11px] text-slate-500 pt-0.5">
-                        💡 {item.reason}
-                      </div>
-                    )}
+            {/* 5. 더 나은 표현으로 다듬기 (Better Expressions) - 백지 제출 시에는 표시하지 않음 */}
+            {!isBlank &&
+              student.studentFeedback.betterExpressions &&
+              student.studentFeedback.betterExpressions.length > 0 && (
+                <div className="mb-3.5">
+                  <div className="font-bold text-slate-900 text-xs sm:text-sm mb-1.5 flex items-center space-x-1.5">
+                    <span className="text-slate-800">■</span>
+                    <span>더 나은 표현으로 다듬기 (Better Expressions)</span>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div className="space-y-1.5">
+                    {student.studentFeedback.betterExpressions.map((item, bIdx) => (
+                      <div
+                        key={bIdx}
+                        className="bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs sm:text-sm space-y-1"
+                      >
+                        <div className="text-slate-600">
+                          <span className="font-bold text-slate-700">[원문]</span> {item.original}
+                        </div>
+                        <div className="text-indigo-900 font-bold">
+                          <span className="font-black text-indigo-700">→ [수정]</span> {item.improved}
+                        </div>
+                        {(() => {
+                          const cleanedReason = sanitizeFeedback(item.reason);
+                          if (!cleanedReason) return null;
+                          return (
+                            <div className="text-[11px] text-slate-500 pt-0.5">
+                              💡 {cleanedReason}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             {/* 6. 쓰기 발전 방향 (Next Step) */}
             <div className="mb-3.5">
@@ -484,7 +474,7 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
                 <span>쓰기 발전 방향 (Next Step)</span>
               </div>
               <div className="bg-sky-50/40 border border-sky-200 rounded-xl p-3 text-xs sm:text-sm text-slate-800 leading-relaxed">
-                {student.studentFeedback.nextStep}
+                {sanitizeFeedback(student.studentFeedback.nextStep)}
               </div>
             </div>
 
@@ -494,7 +484,8 @@ export const StudentPrintView: React.FC<StudentPrintViewProps> = ({
               <span>지도교사 확인: ___________________ (인)</span>
             </div>
           </div>
-        ))}
+        );
+      })}
       </div>
     </div>
   );

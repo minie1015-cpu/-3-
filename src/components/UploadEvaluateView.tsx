@@ -29,6 +29,7 @@ import {
   generate28StudentBatchRecords,
 } from '../data/sampleStudents';
 import { splitPdfIntoPages, isPdfFile } from '../utils/pdfSplitter';
+import { sanitizeEvaluationRecord, cleanFeedbackText } from '../utils/sanitize';
 
 interface UploadEvaluateViewProps {
   onAddEvaluation: (record: EvaluationRecord) => void;
@@ -314,7 +315,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
         }
 
         const resData = json.data;
-        const newRecord: EvaluationRecord = {
+        const newRecord: EvaluationRecord = sanitizeEvaluationRecord({
           id: currentItem.result?.id || `eval-${currentItem.id}`,
           studentInfo: resData.studentInfo || {
             grade: currentItem.studentInfo?.grade || '3',
@@ -341,7 +342,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
             minute: '2-digit',
           }),
           sourceType: 'image',
-        };
+        });
 
         evaluatedRecords.push(newRecord);
 
@@ -438,7 +439,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
       }
 
       const resData = json.data;
-      const newRecord: EvaluationRecord = {
+      const newRecord: EvaluationRecord = sanitizeEvaluationRecord({
         id: targetItem.result?.id || `eval-${targetItem.id}`,
         studentInfo: resData.studentInfo || {
           grade: targetItem.studentInfo?.grade || '3',
@@ -465,7 +466,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
           minute: '2-digit',
         }),
         sourceType: 'image',
-      };
+      });
 
       setBatchQueue((prev) =>
         prev.map((it) =>
@@ -741,7 +742,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
       }
 
       const resultData = json.data;
-      const newRecord: EvaluationRecord = {
+      const newRecord: EvaluationRecord = sanitizeEvaluationRecord({
         id: `eval-${Date.now()}`,
         studentInfo: resultData.studentInfo || singleStudentInfo,
         scores: resultData.scores,
@@ -764,7 +765,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
         }),
         sourceType: singleFileBase64 ? 'image' : 'text',
         imagePreviewUrl: singlePreviewUrl || undefined,
-      };
+      });
 
       setLastSingleResult(newRecord);
       onAddEvaluation(newRecord);
@@ -1721,7 +1722,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                                         : 'bg-amber-100/70 text-amber-800 border-amber-200'
                                     }`}
                                   >
-                                    {isCap ? '대소문자 (감점제외 안내)' : err.errorType}
+                                    {isCap ? '대소문자 표기 안내' : err.errorType}
                                   </span>
                                 </div>
                               );
@@ -1747,7 +1748,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                             }
                             return (
                               <p className="text-[11px] text-slate-600 pl-1 mt-0.5">
-                                ✓ 주요 문법/어휘 오류 2개 이하로 감점 없이 기본 점수를 획득하였습니다. (대소문자는 감점 대상 제외)
+                                ✓ 배운 핵심 어법 요소를 활용하여 성실하게 영작문을 완성하였습니다.
                               </p>
                             );
                           })()
@@ -1758,7 +1759,7 @@ export const UploadEvaluateView: React.FC<UploadEvaluateViewProps> = ({
                         ■ 잘한 점 (Good Points)
                       </div>
                       <p className="text-slate-700 text-[11px] pl-1 leading-relaxed">
-                        {lastSingleResult.studentFeedback.goodPoints}
+                        {cleanFeedbackText(lastSingleResult.studentFeedback.goodPoints)}
                       </p>
 
                       <div className="pt-1 font-bold text-[11px] text-blue-800">

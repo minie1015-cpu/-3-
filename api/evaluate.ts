@@ -156,13 +156,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     let userPrompt = `다음 학생의 답안을 분석하고 16점 객관적 루브릭에 맞춰 채점해 줘.
-- 내용 영역(본문1, 본문2)은 문장 수 중심의 객관적 기준(3문장: 4점 / 2문장: 3점 / 1문장: 2점 / 0문장: 1점)에 따라 점수를 부여해 줘.
-- 언어형식:
-  * 분사 표현과 because 둘 다 바르게 쓰면 기본 4점, 둘 중 하나만 쓰면 기본 3점, 시도하였으나 어색하면 2점, 미작성 1점.
-  * [필수 준수] 대소문자 표기 오류(문장 첫 글자 소문자 등)는 점수 감점 대상에서 완전히 제외(0점 감점, 점수에 반영 금지)!
-  * [필수 준수] 단어 선택(Word Choice, 예: hear music -> listen to music)은 학생에게 너무 가혹하므로 절대로 점수 감점하지 말 것(0점 감점)! 대신 Better Expressions에 친절하게 제안해 줄 것.
-  * 중대한 문법 오류(대소문자/단어선택 제외) 0~2개 0점 감점, 3~5개 1점 감점, 6개 이상 2점 감점하여 최종 언어형식 점수를 산출해 줘.
-- 글의 구성은 80단어 이상 4점, 60~79단어 3점, 59단어 이하 2점, 백지 1점으로 부여해 줘.
+
+★★★ [초중요 OCR 판독 지침: 인쇄된 시험지 양식 문구와 학생의 손글씨 답안 엄격 구분] ★★★
+1. 시험지/학습지 양식에 미리 인쇄된 컴퓨터 활자체(폰트) 문구는 절대 학생이 쓴 답안이 아닙니다!
+   - 예: 'Example:', 'street cleaner', 'My Hidden Hero', 'Title:', 'firefighter', 'nurse', 문제 안내문, 보기 단어 상자 등
+   - 인쇄된 문제지 텍스트는 학생의 본문 텍스트(extractedText)에 절대 포함해서는 안 됩니다!
+2. **오직 학생이 필기구(연필, 샤프, 볼펜)로 직접 손글씨(Handwriting)로 작성한 영문 문장만 인식**하여 추출(OCR)해 줘.
+3. **학생의 손글씨 작성란(줄공책 라인, 네모 본문 작성 칸)에 학생이 직접 쓴 손글씨가 없거나 비어 있는 경우:**
+   - **이것은 100% '백지 제출'입니다!** 인쇄된 예시 단어(예: 'street cleaner')를 학생이 쓴 것으로 착각하여 단어 수나 문장으로 카운트하거나 피드백을 주면 치명적인 오류입니다.
+   - 백지 제출 시에는:
+     * extractedText: "(본문 미작성 - 백지 제출)"
+     * wordCount: 0
+     * sentenceCounts: { body1SentenceCount: 0, body2SentenceCount: 0 }
+     * scores: { body1Score: 1, body2Score: 1, languageScore: 1, wordCountScore: 1, totalScore: 4 } (최저 기본점수 정확히 4점!)
+     * languageAnalysis: { participleUsed: false, becauseUsed: false, baseScore: 1, errorCount: 0, deduction: 0, finalLanguageScore: 1, errors: [] }
+     * studentFeedback:
+       - achievementLevels: { contentRating: 1, contentStars: "★☆☆☆☆", languageRating: 1, languageStars: "★☆☆☆☆", volumeRating: 1, volumeStars: "★☆☆☆☆", wordCountNote: "0단어 (백지 제출)" }
+       - goodPoints: "답안지에 작성된 본문 내용이 없습니다 (백지 제출). 다음 수행평가에서는 배운 핵심 표현을 활용하여 한 문장이라도 용기를 내어 작성해 보세요."
+       - betterExpressions: [{ original: "(본문 미작성)", improved: "A doctor treating sick patients is a hero because she saves lives.", reason: "명사를 수식하는 분사와 접속사 because를 결합한 모범 예문입니다." }]
+       - nextStep: "수업 시간에 배운 명사 수식 분사(~ing) 표현과 이유의 접속사 because를 활용하여 기본 문장 쓰기 연습부터 차근차근 시작해 보세요."
+
+- 작성된 학생 답안이 있는 경우 채점 기준:
+  * 본문 1 & 본문 2: 작성된 문장 수 기준 (3문장: 4점 / 2문장: 3점 / 1문장: 2점 / 0문장: 1점)
+  * 언어형식: 분사 표현과 because 둘 다 바르게 쓰면 기본 4점, 둘 중 하나만 쓰면 기본 3점, 시도하였으나 어색하면 2점, 미작성 1점
+  * [필수] 대소문자 표기 오류는 점수 감점 대상에서 완전히 제외(0점 감점, 점수에 반영 금지)!
+  * [필수] 단어/어휘 선택(Word Choice)은 점수 감점 대상에서 완전히 제외(0점 감점, Better Expressions로 제안)!
+  * 중대한 문법 오류 0~2개 0점 감점, 3~5개 1점 감점, 6개 이상 2점 감점
+  * 글의 구성: 80단어 이상 4점, 60~79단어 3점, 59단어 이하 2점, 백지 1점
 - 학생용 피드백에는 [채점 기준], 점수, 감점 산정 공식, 2점/4점 기준 등을 절대 노출하지 말 것.\n`;
     if (studentText) {
       userPrompt += `[학생 답안 텍스트]:\n"""\n${studentText}\n"""\n`;
@@ -345,16 +365,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const parsed = JSON.parse(response.text || '{}');
 
-    // Check if the student's submission is blank / unwritten
+    // Check if the student's submission is blank / unwritten / only contains printed template noise
     const rawText = (parsed.extractedText || studentText || '').trim();
+    const lowerRaw = rawText.toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const englishWords = rawText.match(/[a-zA-Z]{2,}/g) || [];
+
+    // Common printed worksheet headers, topics, or example phrases:
+    const templateFragments = [
+      'street cleaner',
+      'a street cleaner',
+      'my hidden hero',
+      'hidden hero',
+      'example',
+      'firefighter',
+      'cleaner',
+      'nurse',
+    ];
+
+    const isTemplateOnly =
+      templateFragments.some((tf) => lowerRaw === tf || lowerRaw === `a ${tf}`) ||
+      (englishWords.length <= 8 && templateFragments.some((tf) => lowerRaw.includes(tf)));
+
+    // Sentence count check: If 0 sentences in both body 1 and body 2, student wrote no essay
+    const sCounts = parsed.sentenceCounts || { body1SentenceCount: 0, body2SentenceCount: 0 };
+    const totalSentences = (sCounts.body1SentenceCount || 0) + (sCounts.body2SentenceCount || 0);
+
     const isExplicitBlank =
       !rawText ||
       rawText === '(본문 미작성)' ||
       rawText.includes('백지 제출') ||
       rawText.includes('본문 미작성') ||
       (typeof parsed.wordCount === 'number' && parsed.wordCount === 0) ||
-      englishWords.length <= 3;
+      englishWords.length <= 6 ||
+      isTemplateOnly ||
+      totalSentences === 0;
 
     if (isExplicitBlank) {
       parsed.extractedText = '(본문 미작성 - 백지 제출)';
@@ -529,6 +573,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               .replace(/\(4점\)/g, '')
               .replace(/\(기본\s*\d점\)/g, '')
               .replace(/\d점\s*감점/g, '')
+              .replace(/문장의 첫 글자 대소문자나 더 자연스러운 단어 선택[^.]*점수에 반영되지 않습니다\.?/g, '')
+              .replace(/학생의 기를 살리고 배움을 돕기 위한 추천 제안이며 점수에 반영되지 않습니다\.?/g, '')
+              .replace(/💡?\s*어법 및 단어 배움 팁:?[^\n.]*/g, '')
               .trim();
           };
           if (parsed.studentFeedback.goodPoints) {
@@ -536,6 +583,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           if (parsed.studentFeedback.nextStep) {
             parsed.studentFeedback.nextStep = cleanText(parsed.studentFeedback.nextStep);
+          }
+          if (Array.isArray(parsed.studentFeedback.betterExpressions)) {
+            parsed.studentFeedback.betterExpressions.forEach((be: any) => {
+              if (be.reason) be.reason = cleanText(be.reason);
+            });
           }
         }
       } else {

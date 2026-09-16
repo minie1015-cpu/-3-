@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { UploadEvaluateView } from './components/UploadEvaluateView';
 import { TeacherSheetView } from './components/TeacherSheetView';
@@ -7,14 +7,38 @@ import { AppsScriptGuideView } from './components/AppsScriptGuideView';
 import { RubricInfoModal } from './components/RubricInfoModal';
 import { EvaluationRecord } from './types';
 import { SAMPLE_EVALUATIONS } from './data/sampleStudents';
+import { sanitizeEvaluationRecord } from './utils/sanitize';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'teacher' | 'student' | 'gas'>('upload');
-  const [records, setRecords] = useState<EvaluationRecord[]>(SAMPLE_EVALUATIONS);
+  const [records, setRecords] = useState<EvaluationRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('english_eval_records_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(sanitizeEvaluationRecord);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load records from localStorage', e);
+    }
+    return SAMPLE_EVALUATIONS.map(sanitizeEvaluationRecord);
+  });
+
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
-    SAMPLE_EVALUATIONS[0]?.id || null
+    records[0]?.id || SAMPLE_EVALUATIONS[0]?.id || null
   );
   const [isRubricModalOpen, setIsRubricModalOpen] = useState(false);
+
+  // Sync records to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('english_eval_records_v1', JSON.stringify(records));
+    } catch (e) {
+      console.warn('Failed to persist records to localStorage', e);
+    }
+  }, [records]);
 
   // Add new evaluation record
   // Add or update single evaluation record
@@ -83,14 +107,15 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 pb-16">
-        {activeTab === 'upload' && (
+        {/* Keep UploadEvaluateView mounted in DOM so uploaded file queue is preserved until user clicks delete */}
+        <div className={activeTab === 'upload' ? 'block' : 'hidden'}>
           <UploadEvaluateView
             onAddEvaluation={handleAddEvaluation}
             onAddBatchEvaluations={handleBatchAddEvaluations}
             onNavigateToTab={(tab) => setActiveTab(tab)}
             onSelectStudentForPrint={(id) => setSelectedStudentId(id)}
           />
-        )}
+        </div>
 
         {activeTab === 'teacher' && (
           <TeacherSheetView
